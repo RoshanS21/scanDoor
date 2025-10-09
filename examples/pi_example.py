@@ -13,10 +13,19 @@ Hardware safety notes:
 
 Run on Pi with pigpiod started (sudo systemctl enable --now pigpiod)
 """
+import sys
+import os
 import asyncio
-from src.doorscan.pi_gpio import WiegandConfig, PiWiegandReader, PiDoorSensor, PiLockController
-from src.doorscan.devices import EventBus
-from src.doorscan.worker import DoorWorker
+
+# Ensure local 'src' is on sys.path so we can import the package without installing it.
+ROOT = os.path.dirname(os.path.dirname(__file__))
+SRC = os.path.join(ROOT, "src")
+if SRC not in sys.path:
+    sys.path.insert(0, SRC)
+
+from doorscan.pi_gpio import WiegandConfig, PiWiegandReader, PiDoorSensor, PiLockController
+from doorscan.devices import EventBus
+from doorscan.worker import DoorWorker
 
 async def main():
     bus = EventBus()
@@ -27,9 +36,19 @@ async def main():
     worker = DoorWorker("door-1", bus, lock, allow_list={12345}, unlock_duration_ms=3000)
 
     # start hardware
-    reader.start()
-    sensor.start()
-    lock.start()
+    try:
+        reader.start()
+    except Exception as e:
+        print(f"Warning: could not start PiWiegandReader: {e}")
+        print("Ensure pigpiod is running and pigpio/RPi.GPIO are installed on the Pi.")
+    try:
+        sensor.start()
+    except Exception as e:
+        print(f"Warning: could not start PiDoorSensor: {e}")
+    try:
+        lock.start()
+    except Exception as e:
+        print(f"Warning: could not start PiLockController: {e}")
     await worker.start()
 
     print("Pi example running. Present card to reader or press Ctrl-C to quit.")

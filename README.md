@@ -83,6 +83,8 @@ pip install -r requirements.txt
 python3 examples/pi_example.py
 ```
 
+Note: run the command from the repository root (the folder that contains `src/`) so the example can find the local package. If you see `ModuleNotFoundError: No module named 'src'` or similar, `cd` to the repo root and re-run the command.
+
 4. Run the simulator/demo locally (no hardware) to exercise the logic:
 
 ```bash
