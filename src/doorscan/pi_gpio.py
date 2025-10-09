@@ -56,10 +56,23 @@ class PiWiegandReader:
         self._d1_cb = None
 
     def start(self):
+        # Prefer pigpio (more reliable) but gracefully fall back to RPi.GPIO if the daemon
+        # is not available or connection fails.
         if PIGPIO_AVAILABLE:
-            self._start_pigpio()
+            try:
+                self._start_pigpio()
+                return
+            except RuntimeError as e:
+                # pigpio present but daemon not reachable
+                if RPIGPIO_AVAILABLE:
+                    print(f"Warning: pigpio daemon unavailable ({e}), falling back to RPi.GPIO")
+                    self._start_rpigpio()
+                    return
+                else:
+                    raise
         elif RPIGPIO_AVAILABLE:
             self._start_rpigpio()
+            return
         else:
             raise RuntimeError("No GPIO backend available. Install pigpio or run on a Raspberry Pi with RPi.GPIO.")
         self._running = True
@@ -110,6 +123,11 @@ class PiWiegandReader:
         GPIO.add_event_detect(self.config.d0_pin, GPIO.FALLING, callback=lambda ch: self._record_bit(0), bouncetime=1)
         GPIO.add_event_detect(self.config.d1_pin, GPIO.FALLING, callback=lambda ch: self._record_bit(1), bouncetime=1)
 
+    # expose whether we're using pigpio daemon backend
+    @property
+    def using_pigpio(self) -> bool:
+        return bool(self._pi)
+
     # core bit collection
     def _record_bit(self, bit: int):
         now = time.time()
@@ -153,14 +171,27 @@ class PiDoorSensor:
         self.door_id = door_id
         self.bus = bus
         self._loop = asyncio.get_event_loop()
+        self._pi = None
+        self._cb = None
 
     def start(self):
+        # Prefer RPi.GPIO for simple access; if not present try pigpio daemon
         if RPIGPIO_AVAILABLE:
             GPIO.setmode(GPIO.BCM)
             GPIO.setup(self.pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
             GPIO.add_event_detect(self.pin, GPIO.BOTH, callback=lambda ch: self._on_change(), bouncetime=50)
-        else:
-            raise RuntimeError("RPi.GPIO not available for door sensor")
+            return
+        if PIGPIO_AVAILABLE:
+            # try to connect to daemon
+            self._pi = pigpio.pi()
+            if not self._pi.connected:
+                raise RuntimeError("pigpio daemon not available for door sensor")
+            self._pi.set_mode(self.pin, pigpio.INPUT)
+            self._pi.set_pull_up_down(self.pin, pigpio.PUD_UP)
+            # callback will call _on_change (pigpio callback signature: gpio, level, tick)
+            self._cb = self._pi.callback(self.pin, pigpio.EITHER_EDGE, lambda g, l, t: self._on_change())
+            return
+        raise RuntimeError("No GPIO backend available for door sensor")
 
     def _on_change(self):
         try:
@@ -169,7 +200,14 @@ class PiDoorSensor:
             pass
 
     def _publish_state(self):
-        state = 'open' if GPIO.input(self.pin) else 'closed'
+        if RPIGPIO_AVAILABLE:
+            state = 'open' if GPIO.input(self.pin) else 'closed'
+        elif self._pi:
+            # pigpio returns level 0/1
+            level = self._pi.read(self.pin)
+            state = 'open' if level else 'closed'
+        else:
+            state = 'unknown'
         asyncio.create_task(self.bus.publish('door_state', type('S', (), {'door_id': self.door_id, 'state': state, 'timestamp': time.time()})))
 
 class PiLockController:
@@ -178,6 +216,7 @@ class PiLockController:
         self.door_id = door_id
         self.bus = bus
         self.active_high = active_high
+        self._pi = None
 
     def start(self):
         if RPIGPIO_AVAILABLE:
@@ -185,23 +224,48 @@ class PiLockController:
             GPIO.setup(self.pin, GPIO.OUT)
             # ensure locked initial state
             GPIO.output(self.pin, not self.active_high)
-        else:
-            raise RuntimeError("RPi.GPIO not available for lock controller")
+            return
+        if PIGPIO_AVAILABLE:
+            self._pi = pigpio.pi()
+            if not self._pi.connected:
+                raise RuntimeError("pigpio daemon not available for lock controller")
+            self._pi.set_mode(self.pin, pigpio.OUTPUT)
+            self._pi.write(self.pin, 0 if not self.active_high else 1)
+            # set to locked state (inverse of active_high)
+            self._pi.write(self.pin, 0 if self.active_high else 1)
+            return
+        raise RuntimeError("No GPIO backend available for lock controller")
 
     async def send_command(self, cmd):
         # blocking but short; could be moved to executor
         action = cmd.action
         if action == 'pulse':
             duration = (cmd.duration_ms or 3000) / 1000.0
-            GPIO.output(self.pin, self.active_high)
+            if RPIGPIO_AVAILABLE:
+                GPIO.output(self.pin, self.active_high)
+            elif self._pi:
+                self._pi.write(self.pin, 1 if self.active_high else 0)
+            else:
+                # nothing to do
+                pass
             # publish unlocked
             await self.bus.publish('lock_response', type('R', (), {'door_id': self.door_id, 'request_id': cmd.request_id, 'status': 'unlocked', 'timestamp': time.time()}))
             await asyncio.sleep(duration)
-            GPIO.output(self.pin, not self.active_high)
+            if RPIGPIO_AVAILABLE:
+                GPIO.output(self.pin, not self.active_high)
+            elif self._pi:
+                self._pi.write(self.pin, 0 if self.active_high else 1)
+            else:
+                pass
             await self.bus.publish('lock_response', type('R', (), {'door_id': self.door_id, 'request_id': cmd.request_id, 'status': 'locked', 'timestamp': time.time()}))
         elif action in ('lock','unlock'):
             val = True if action == 'unlock' else False
-            GPIO.output(self.pin, self.active_high if val else not self.active_high)
+            if RPIGPIO_AVAILABLE:
+                GPIO.output(self.pin, self.active_high if val else not self.active_high)
+            elif self._pi:
+                self._pi.write(self.pin, 1 if (self.active_high if val else not self.active_high) else 0)
+            else:
+                pass
             status = 'unlocked' if action == 'unlock' else 'locked'
             await self.bus.publish('lock_response', type('R', (), {'door_id': self.door_id, 'request_id': cmd.request_id, 'status': status, 'timestamp': time.time()}))
         else:
