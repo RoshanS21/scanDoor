@@ -2,10 +2,10 @@ import asyncio
 from typing import Set
 import time
 import uuid
-from .devices import EventBus, CardEvent, LockCommand, SimLockController, DoorSensorEvent
+from .devices import EventBus, CardEvent, LockCommand, DoorSensorEvent
 
 class DoorWorker:
-    def __init__(self, door_id: str, bus: EventBus, lock: SimLockController, allow_list: Set[int] | None = None, unlock_duration_ms: int = 5000):
+    def __init__(self, door_id: str, bus: EventBus, lock, allow_list: Set[int] | None = None, unlock_duration_ms: int = 5000):
         self.door_id = door_id
         self.bus = bus
         self.lock = lock

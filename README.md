@@ -54,21 +54,6 @@ Important:
 - Use opto-isolation or level shifting if the reader outputs are not 3.3V TTL.
 - Locks must use a separate power supply and a proper driver (relay/MOSFET). Do not power locks from the Pi.
 
-ASCII wiring diagram (40-pin header, looking at the board with pins labeled):
-
-```
- (1) 3.3V  (2) 5V
- (3) BCM2  (4) BCM3
- (5) BCM4  (6) GND
- (7) BCM17 (8) BCM18
- (9) GND  (10) BCM15
- (11) BCM11 (12) BCM10
- (13) BCM27 (14) GND
- (15) BCM22 (16) BCM23
- (17) 3.3V (18) BCM24
- ... (rest omitted for brevity)
-```
-
 Pin callouts for this project:
 
 - BCM17 (physical 11) — Wiegand D0
