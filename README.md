@@ -1,75 +1,38 @@
-# scanDoor Prototype
+# scanDoor — Raspberry Pi Wiegand door controller (prototype)
 
-Simple todo list
+Minimal, hardware-first prototype that reads Wiegand readers, monitors a door sensor, and controls a door lock.
 
-- [ ] Implement HAL interfaces for Wiegand readers, door sensors, locks
-- [ ] Implement EventBus and DoorWorker
-- [ ] Provide simulated hardware for local testing
-- [ ] Add persistence and admin API
-- [ ] Replace simulators with real GPIO/MQTT drivers
+Quick overview
+--------------
+- The Pi captures Wiegand card reads and publishes `CardEvent` to an internal EventBus.
+- A DoorWorker evaluates the event (simple allow-list by default) and issues lock commands.
+- The lock controller actuates the lock and the door sensor reports open/closed state.
 
-Quick start (Python 3.11+):
-
-1. Create a virtualenv and install dev deps:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-2. Run the demo:
-
-```bash
-python -m src.doorscan.main
-```
-
-3. Run tests:
-
-```bash
-pytest -q
-```
-
-This repo contains a minimal async prototype demonstrating a Wiegand card event -> policy decision -> lock command -> sensor verification flow. It uses simulators so you can run without hardware.
-
-Raspberry Pi connection guide
------------------------------
-
-Hardware notes (BCM numbering used in examples):
-
-- Wiegand reader pins: typically D0, D1, VCC, GND. Many readers use 12V for VCC; check your reader's datasheet.
-- Do NOT connect 12V directly to the Pi GPIO. Use opto-isolation or a level shifter if the reader output is not 3.3V tolerant.
-- Suggested wiring for a single reader with opto-isolator (safe):
-	- Reader D0 -> opto-isolator input -> opto output -> Pi GPIO (e.g., BCM 17)
-	- Reader D1 -> opto-isolator input -> opto output -> Pi GPIO (e.g., BCM 27)
-	- Reader GND -> common reference or opto-isolator ground as required (follow opto wiring)
-	- Reader VCC -> reader power supply (often 12V) separate from Pi
-
-Simple direct wiring (only if your reader's D0/D1 are 3.3V TTL outputs and rated for Pi use):
-
-- Reader D0 -> Pi GPIO 17 (BCM)
-- Reader D1 -> Pi GPIO 27 (BCM)
-- Reader GND -> Pi GND
-- Reader VCC -> Reader power supply (do not power the reader from Pi 3.3V unless explicitly supported)
-
-Lock and sensor wiring hints:
-
-- Lock (electric strike or maglock) should have its own power supply (12V/24V). Use a relay or MOSFET with proper flyback protection and opto-isolation where possible.
-- Lock control -> Pi GPIO through a relay driver (e.g., transistor + diode) or an opto-isolated relay board. Example: Pi GPIO 23 -> relay module -> lock power.
-- Door sensor (magnetic/reed): wire to a Pi GPIO configured with internal pull-up/pull-down. Use normally-closed (NC) contacts for better tamper detection.
-
-Software: running on Raspberry Pi
+Prerequisites (Pi 5 recommended)
 --------------------------------
+- Raspberry Pi OS (or similar) on Raspberry Pi 5.
+- A Wiegand reader, door sensor (reed/magnet), and a lock driver (relay/MOSFET) with separate power supply.
 
-1. Install pigpio and start the daemon (required for reliable Wiegand timing):
+System packages to install (Pi 5)
+---------------------------------
+Install gpiozero (uses gpiod/lgpio backends on Pi 5) and libgpiod:
 
 ```bash
 sudo apt update
-sudo apt install pigpio
-sudo systemctl enable --now pigpiod
+sudo apt install -y python3-gpiozero libgpiod2 python3-rpi.gpio
 ```
 
-2. Create and activate a virtualenv (recommended):
+Optional: pigpio daemon for low-latency capture (may require building from source on Pi 5):
+
+```bash
+# apt install (may be outdated)
+sudo apt install -y pigpio python3-pigpio
+# or build pigpio from https://github.com/joan2937/pigpio if needed
+```
+
+Python dependencies
+-------------------
+Create a virtualenv and install Python deps from `requirements.txt`:
 
 ```bash
 python3 -m venv .venv
@@ -77,29 +40,62 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-3. Run the Pi example which uses BCM pins 17/27 for Wiegand, 22 for door sensor, 23 for lock (edit `examples/pi_example.py` if you use different pins):
+Wiring quick reference
+----------------------
+Primary signals (BCM → physical header):
+
+- Wiegand D0 -> BCM 17  -> physical pin 11
+- Wiegand D1 -> BCM 27  -> physical pin 13
+- Door sensor  -> BCM 22 -> physical pin 15
+- Lock control  -> BCM 23 -> physical pin 16
+
+Important:
+- Physical pin 17 is a 3.3V power supply. Do NOT confuse it with BCM 17 (GPIO input). Always double-check physical pins when wiring.
+- Use opto-isolation or level shifting if the reader outputs are not 3.3V TTL.
+- Locks must use a separate power supply and a proper driver (relay/MOSFET). Do not power locks from the Pi.
+
+ASCII wiring diagram (40-pin header, looking at the board with pins labeled):
+
+```
+ (1) 3.3V  (2) 5V
+ (3) BCM2  (4) BCM3
+ (5) BCM4  (6) GND
+ (7) BCM17 (8) BCM18
+ (9) GND  (10) BCM15
+ (11) BCM11 (12) BCM10
+ (13) BCM27 (14) GND
+ (15) BCM22 (16) BCM23
+ (17) 3.3V (18) BCM24
+ ... (rest omitted for brevity)
+```
+
+Pin callouts for this project:
+
+- BCM17 (physical 11) — Wiegand D0
+- BCM27 (physical 13) — Wiegand D1
+- BCM22 (physical 15) — Door sensor input (NC preferred)
+- BCM23 (physical 16) — Lock control (relay input)
+
+Always confirm the physical pin numbers on your Pi model pinout before connecting.
+
+Run the program
+---------------
+From the repository root:
 
 ```bash
+source .venv/bin/activate
 python3 examples/pi_example.py
 ```
 
-Note: run the command from the repository root (the folder that contains `src/`) so the example can find the local package. If you see `ModuleNotFoundError: No module named 'src'` or similar, `cd` to the repo root and re-run the command.
+The example uses the pins above by default. Edit `examples/pi_example.py` to change pins or allowed cards.
 
-4. Run the simulator/demo locally (no hardware) to exercise the logic:
+Troubleshooting
+---------------
+- If Wiegand reads are missed, ensure `gpiozero` is installed and the wiring is clean. For high reliability use pigpio or an MCU at the door.
+- If `pigpiod` fails to start on Pi 5, build the latest pigpio from source (see project docs) or rely on `gpiozero`/gpiod backends.
 
-```bash
-python3 -m src.doorscan.main
-```
-
-5. Run tests:
-
-```bash
-python3 -m pytest -q
-```
-
-Safety and troubleshooting
---------------------------
-
-- If you see missed or garbled card reads, ensure `pigpiod` is running and that your wiring uses clean signals (use short, shielded wires when possible).
-- If the Pi misses pulses under load, consider placing a per-door MCU (ESP32/Arduino) to capture Wiegand at the door and forward framed messages to the Pi over RS485/MQTT.
-- Log electrical faults and check grounds. Use fuses on lock power circuits.
+Next steps
+----------
+- Add a DeviceManager for multiple doors.
+- Implement a robust Wiegand decoder (26/34-bit) with parity checks.
+- Add persistence, admin API, and secure OTA/firmware patterns.

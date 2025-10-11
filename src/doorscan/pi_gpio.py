@@ -27,6 +27,15 @@ except Exception:
     RPIGPIO_AVAILABLE = False
     GPIO = None
 
+# Prefer gpiozero (which can use gpiod/lgpio backends on newer Pi models)
+try:
+    from gpiozero import Button, DigitalOutputDevice
+    GPIOZERO_AVAILABLE = True
+except Exception:
+    GPIOZERO_AVAILABLE = False
+    Button = None
+    DigitalOutputDevice = None
+
 # Small helper dataclasses re-used from devices.py to avoid circular import
 from .devices import CardEvent, EventBus
 
@@ -56,25 +65,34 @@ class PiWiegandReader:
         self._d1_cb = None
 
     def start(self):
-        # Prefer pigpio (more reliable) but gracefully fall back to RPi.GPIO if the daemon
-        # is not available or connection fails.
+        # Prefer gpiozero (works with gpiod/lgpio on Pi 5). If not available, use pigpio or RPi.GPIO with fallbacks.
+        if GPIOZERO_AVAILABLE:
+            try:
+                self._start_gpiozero()
+                return
+            except Exception as e:
+                print(f"Warning: gpiozero start failed: {e}")
+                # continue to other backends
+
         if PIGPIO_AVAILABLE:
             try:
                 self._start_pigpio()
                 return
             except RuntimeError as e:
-                # pigpio present but daemon not reachable
-                if RPIGPIO_AVAILABLE:
-                    print(f"Warning: pigpio daemon unavailable ({e}), falling back to RPi.GPIO")
-                    self._start_rpigpio()
-                    return
-                else:
-                    raise
-        elif RPIGPIO_AVAILABLE:
+                print(f"Warning: pigpio daemon unavailable ({e})")
+
+        if RPIGPIO_AVAILABLE:
             self._start_rpigpio()
             return
-        else:
-            raise RuntimeError("No GPIO backend available. Install pigpio or run on a Raspberry Pi with RPi.GPIO.")
+
+        raise RuntimeError("No GPIO backend available. Install gpiozero, pigpio, or run on a Raspberry Pi with RPi.GPIO.")
+
+    def _start_gpiozero(self):
+        # Use gpiozero Button to detect falling edges reliably using gpiod/lgpio backend
+        self._d0_btn = Button(self.config.d0_pin, pull_up=True, bounce_time=None)
+        self._d1_btn = Button(self.config.d1_pin, pull_up=True, bounce_time=None)
+        self._d0_btn.when_pressed = lambda: self._record_bit(0)
+        self._d1_btn.when_pressed = lambda: self._record_bit(1)
         self._running = True
 
     def stop(self):
@@ -175,22 +193,30 @@ class PiDoorSensor:
         self._cb = None
 
     def start(self):
-        # Prefer RPi.GPIO for simple access; if not present try pigpio daemon
-        if RPIGPIO_AVAILABLE:
-            GPIO.setmode(GPIO.BCM)
-            GPIO.setup(self.pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-            GPIO.add_event_detect(self.pin, GPIO.BOTH, callback=lambda ch: self._on_change(), bouncetime=50)
+        # Prefer gpiozero
+        if GPIOZERO_AVAILABLE:
+            self._btn = Button(self.pin, pull_up=True, bounce_time=0.05)
+            self._btn.when_pressed = lambda: self._on_change()
+            self._btn.when_released = lambda: self._on_change()
             return
+
+        # pigpio fallback
         if PIGPIO_AVAILABLE:
-            # try to connect to daemon
             self._pi = pigpio.pi()
             if not self._pi.connected:
                 raise RuntimeError("pigpio daemon not available for door sensor")
             self._pi.set_mode(self.pin, pigpio.INPUT)
             self._pi.set_pull_up_down(self.pin, pigpio.PUD_UP)
-            # callback will call _on_change (pigpio callback signature: gpio, level, tick)
             self._cb = self._pi.callback(self.pin, pigpio.EITHER_EDGE, lambda g, l, t: self._on_change())
             return
+
+        # last resort: RPi.GPIO
+        if RPIGPIO_AVAILABLE:
+            GPIO.setmode(GPIO.BCM)
+            GPIO.setup(self.pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+            GPIO.add_event_detect(self.pin, GPIO.BOTH, callback=lambda ch: self._on_change(), bouncetime=50)
+            return
+
         raise RuntimeError("No GPIO backend available for door sensor")
 
     def _on_change(self):
@@ -200,7 +226,9 @@ class PiDoorSensor:
             pass
 
     def _publish_state(self):
-        if RPIGPIO_AVAILABLE:
+        if GPIOZERO_AVAILABLE and hasattr(self, '_btn'):
+            state = 'open' if self._btn.is_pressed else 'closed'
+        elif RPIGPIO_AVAILABLE:
             state = 'open' if GPIO.input(self.pin) else 'closed'
         elif self._pi:
             # pigpio returns level 0/1
@@ -219,12 +247,20 @@ class PiLockController:
         self._pi = None
 
     def start(self):
+        # prefer gpiozero
+        if GPIOZERO_AVAILABLE:
+            self._out = DigitalOutputDevice(self.pin, active_high=self.active_high, initial_value=False)
+            # ensure locked (inactive)
+            self._out.off()
+            return
+
         if RPIGPIO_AVAILABLE:
             GPIO.setmode(GPIO.BCM)
             GPIO.setup(self.pin, GPIO.OUT)
             # ensure locked initial state
             GPIO.output(self.pin, not self.active_high)
             return
+
         if PIGPIO_AVAILABLE:
             self._pi = pigpio.pi()
             if not self._pi.connected:
@@ -234,6 +270,7 @@ class PiLockController:
             # set to locked state (inverse of active_high)
             self._pi.write(self.pin, 0 if self.active_high else 1)
             return
+
         raise RuntimeError("No GPIO backend available for lock controller")
 
     async def send_command(self, cmd):
@@ -241,7 +278,9 @@ class PiLockController:
         action = cmd.action
         if action == 'pulse':
             duration = (cmd.duration_ms or 3000) / 1000.0
-            if RPIGPIO_AVAILABLE:
+            if GPIOZERO_AVAILABLE and hasattr(self, '_out'):
+                self._out.on()
+            elif RPIGPIO_AVAILABLE:
                 GPIO.output(self.pin, self.active_high)
             elif self._pi:
                 self._pi.write(self.pin, 1 if self.active_high else 0)
@@ -251,7 +290,9 @@ class PiLockController:
             # publish unlocked
             await self.bus.publish('lock_response', type('R', (), {'door_id': self.door_id, 'request_id': cmd.request_id, 'status': 'unlocked', 'timestamp': time.time()}))
             await asyncio.sleep(duration)
-            if RPIGPIO_AVAILABLE:
+            if GPIOZERO_AVAILABLE and hasattr(self, '_out'):
+                self._out.off()
+            elif RPIGPIO_AVAILABLE:
                 GPIO.output(self.pin, not self.active_high)
             elif self._pi:
                 self._pi.write(self.pin, 0 if self.active_high else 1)
@@ -260,7 +301,12 @@ class PiLockController:
             await self.bus.publish('lock_response', type('R', (), {'door_id': self.door_id, 'request_id': cmd.request_id, 'status': 'locked', 'timestamp': time.time()}))
         elif action in ('lock','unlock'):
             val = True if action == 'unlock' else False
-            if RPIGPIO_AVAILABLE:
+            if GPIOZERO_AVAILABLE and hasattr(self, '_out'):
+                if val:
+                    self._out.on()
+                else:
+                    self._out.off()
+            elif RPIGPIO_AVAILABLE:
                 GPIO.output(self.pin, self.active_high if val else not self.active_high)
             elif self._pi:
                 self._pi.write(self.pin, 1 if (self.active_high if val else not self.active_high) else 0)
