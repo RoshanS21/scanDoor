@@ -1,3 +1,0 @@
-pigpio>=1.78
-RPi.GPIO>=0.7
-gpiozero>=1.7.0
