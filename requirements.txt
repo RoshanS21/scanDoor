@@ -1,5 +1,3 @@
 pigpio>=1.78
 RPi.GPIO>=0.7
-
-# Recommended: gpiozero (uses lgpio/gpiod backends on newer Pi hardware)
 gpiozero>=1.7.0
