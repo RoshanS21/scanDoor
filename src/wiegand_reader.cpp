@@ -5,6 +5,7 @@
 #include <thread>
 #include <atomic>
 #include <csignal>
+#include <iomanip>  // for std::setfill, std::setw
 
 // Default GPIO numbers (BCM). libgpiod uses chip lines; on Raspberry Pi the chip is usually gpiochip0
 static unsigned int DATA0_LINE = 17;
@@ -62,10 +63,24 @@ bool check_parity_34bit(const std::vector<int>& bits) {
     return true;
 }
 
+void print_hex(const std::vector<int>& bits) {
+    uint64_t value = 0;
+    for(size_t i = 0; i < bits.size(); i++) {
+        value = (value << 1) | bits[i];
+    }
+    
+    // Print in hex format with leading zeros based on bit size
+    size_t hex_digits = (bits.size() + 3) / 4;  // Round up bits/4
+    std::cout << "Hex: 0x" << std::hex << std::setfill('0') << std::setw(hex_digits) << value << std::dec << std::endl;
+}
+
 void print_bits(const std::vector<int>& bits) {
     std::cout << "Received " << bits.size() << " bits: ";
     for(int b : bits) std::cout << b;
     std::cout << '\n';
+
+    // Print hex representation for all formats
+    print_hex(bits);
 
     if(bits.size() == 26) {
         if(!check_parity_26bit(bits)) {
@@ -84,6 +99,12 @@ void print_bits(const std::vector<int>& bits) {
             card |= bits[i];
         }
         std::cout << "26-bit format - Facility: " << facility << " Card: " << card << "\n";
+    } else if(bits.size() == 32) {
+        uint32_t value = 0;
+        for(size_t i = 0; i < 32; i++) {
+            value = (value << 1) | bits[i];
+        }
+        std::cout << "32-bit format - Dec: " << value << std::endl;
     } else if(bits.size() == 34) {
         if(!check_parity_34bit(bits)) {
             std::cout << "Warning: 34-bit format parity check failed!\n";
@@ -93,7 +114,13 @@ void print_bits(const std::vector<int>& bits) {
             value <<= 1;
             value |= bits[i];
         }
-        std::cout << "34-bit value: " << value << "\n";
+        std::cout << "34-bit format - Dec: " << value << "\n";
+    } else if(bits.size() == 64) {
+        uint64_t value = 0;
+        for(size_t i = 0; i < 64; i++) {
+            value = (value << 1) | bits[i];
+        }
+        std::cout << "64-bit format - Dec: " << value << std::endl;
     }
 }
 
@@ -156,11 +183,14 @@ int main(int argc, char** argv) {
             if(!bits.empty()) {
                 auto now = std::chrono::steady_clock::now();
                 if(now - last_event > timeout) {
-                    // Only process standard frame sizes
-                    if(bits.size() == 26 || bits.size() == 34) {
+                    // Process all common Wiegand formats
+                    if(bits.size() == 26 || bits.size() == 32 || bits.size() == 34 || bits.size() == 64) {
                         print_bits(bits);
                     } else {
-                        std::cout << "Got " << bits.size() << " bits - ignoring non-standard frame size" << std::endl;
+                        std::cout << "Got " << bits.size() << " bits - Raw data: ";
+                        for(int b : bits) std::cout << b;
+                        std::cout << std::endl;
+                        print_hex(bits);
                     }
                     bits.clear();
                 }
