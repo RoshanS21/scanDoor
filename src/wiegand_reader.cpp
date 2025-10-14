@@ -129,12 +129,9 @@ int main(int argc, char** argv) {
             if(evd0) {
                 auto ev = d0.event_read();
                 // D0 low pulse indicates a 0 bit in Wiegand
-                if(ev.type == gpiod::line_event::FALLING_EDGE || ev.type == gpiod::line_event::RISING_EDGE) {
-                    // Many readers pull the line low briefly for a bit; interpret falling as the bit
-                    // We'll treat any event on D0 as a 0
-                    bits.push_back(0);
-                    last_event = std::chrono::steady_clock::now();
-                }
+                // We'll treat any event on D0 as a 0 since we're monitoring both edges
+                bits.push_back(0);
+                last_event = std::chrono::steady_clock::now();
             }
 
             auto evd1 = d1.event_wait(std::chrono::milliseconds(1));
