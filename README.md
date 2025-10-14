@@ -1,33 +1,111 @@
-Wiegand reader using libgpiod (Raspberry Pi 5)
+# Multi-Door Access Control System
 
-This small C++ project reads a Wiegand stream (common RFID/door readers) using libgpiod.
+A scalable door access control system for Raspberry Pi 5 supporting multiple doors with RFID readers, sensors, and magnetic locks.
 
-Requirements
-- Raspberry Pi 5 (libgpiod supports the gpiochip interface on Pi 5)
-- libgpiod development files (on Raspberry Pi OS: sudo apt install libgpiod-dev libgpiod2)
-- CMake and a C++17 compiler
+## Dependencies Installation
 
-Build
+```bash
+# Update package list
+sudo apt update
 
+# Install required development packages
+sudo apt install -y \
+    cmake \
+    build-essential \
+    git \
+    libgpiod-dev \
+    libgpiod2 \
+    mosquitto \
+    mosquitto-dev \
+    libmosquitto-dev \
+    libspdlog-dev \
+    nlohmann-json3-dev
+
+# Start and enable MQTT broker
+sudo systemctl enable mosquitto
+sudo systemctl start mosquitto
+```
+
+## Building
+
+```bash
+# Clean build (if needed)
+./clean.sh
+
+# Create build directory and build
 mkdir build
 cd build
 cmake ..
-make
+make -j4
+```
 
-Run
+## Running
 
-# the program reads BCM pin numbers for D0 and D1. Defaults: 17 and 27
-sudo ./wiegand_reader 17 27
+```bash
+# Start the door controller (needs sudo for GPIO access)
+sudo ./door_controller
+```
 
-Wiring
-- Connect Wiegand Data0 to the chosen BCM GPIO (e.g. 17)
-- Connect Wiegand Data1 to the chosen BCM GPIO (e.g. 27)
-- Connect GND
+## Directory Structure
 
-Notes
-- libgpiod accesses GPIO via /dev/gpiochipX; on Raspberry Pi 5 the kernel/gpiolib supports this interface.
-- You may need to run as root or grant access to /dev/gpiochip0.
-- The program validates parity bits for both 26-bit and 34-bit Wiegand formats
-- For 26-bit format: even parity (bit 0) over bits 1-12, odd parity (bit 25) over bits 13-24
-- For 34-bit format: even parity (bit 0) over bits 1-16, odd parity (bit 33) over bits 17-32
-- Press Ctrl+C to cleanly exit the program
+```
+src/
+├── core/           # Core interfaces and types
+├── door/           # Door component implementations
+├── mqtt/           # MQTT client and message handling
+└── utils/          # Logging and utility functions
+```
+
+## MQTT Topics
+
+### Publishing Topics
+- `door/{doorId}/card_read` - Card read events
+- `door/{doorId}/door_sensor` - Door open/close events
+- `door/{doorId}/proximity` - Proximity detection events
+- `door/{doorId}/exit_button` - Exit button events
+- `door/{doorId}/status` - Door status updates
+
+### Subscription Topics
+- `door/{doorId}/command` - Control commands
+
+## Cleaning Build
+
+To clean the build directory, you can either:
+
+1. Use the provided script:
+```bash
+./clean.sh
+```
+
+2. Or manually:
+```bash
+rm -rf build/
+```
+
+## Testing MQTT
+
+You can test MQTT functionality using mosquitto command line tools:
+
+```bash
+# Subscribe to all door events
+mosquitto_sub -t "door/#" -v
+
+# Send a command (e.g., unlock door)
+mosquitto_pub -t "door/front/command" -m '{"action": "unlock"}'
+```
+
+## GPIO Pin Configuration
+
+Default pin configuration (BCM numbering):
+- Wiegand DATA0: GPIO17
+- Wiegand DATA1: GPIO27
+- Door Sensor: GPIO22
+- Proximity Sensor: GPIO23
+- Exit Button: GPIO24
+- Magnetic Lock: GPIO25
+
+## Log Files
+
+Log files are stored in the `logs` directory:
+- Each door has its own log file: `logs/door_{doorId}.log`
+- System-wide logs go to console and syslog

@@ -1,14 +1,37 @@
 cmake_minimum_required(VERSION 3.10)
-project(wiegand_lgpiod)
+project(door_control_system)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Find required packages
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBGPIOD REQUIRED libgpiodcxx libgpiod)
+find_package(Mosquitto REQUIRED)
+find_package(spdlog REQUIRED)
 
-include_directories(${LIBGPIOD_INCLUDE_DIRS})
-link_directories(${LIBGPIOD_LIBRARY_DIRS})
+# Include directories
+include_directories(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${LIBGPIOD_INCLUDE_DIRS}
+    ${MOSQUITTO_INCLUDE_DIRS}
+    ${SPDLOG_INCLUDE_DIRS}
+)
 
-add_executable(wiegand_reader src/wiegand_reader.cpp)
-target_link_libraries(wiegand_reader ${LIBGPIOD_LIBRARIES})
+# Add subdirectories
+add_subdirectory(src/core)
+add_subdirectory(src/door)
+add_subdirectory(src/mqtt)
+add_subdirectory(src/utils)
+
+# Main executable
+add_executable(door_controller src/main.cpp)
+target_link_libraries(door_controller
+    door_core
+    door_components
+    door_mqtt
+    door_utils
+    ${LIBGPIOD_LIBRARIES}
+    ${MOSQUITTO_LIBRARIES}
+    spdlog::spdlog
+)
