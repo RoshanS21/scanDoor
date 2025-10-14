@@ -119,34 +119,49 @@ int main(int argc, char** argv) {
 
         std::vector<int> bits;
         auto last_event = std::chrono::steady_clock::now();
-        const auto timeout = std::chrono::milliseconds(30);
-
+        const auto timeout = std::chrono::milliseconds(30);  // Wiegand spec: >20ms means end of frame
+        const auto pulse_timeout = std::chrono::microseconds(100); // Typical Wiegand pulse is 40-100us
+        
         std::cout << "Listening on D0=" << DATA0_LINE << " D1=" << DATA1_LINE << " (BCM) using /dev/gpiochip0" << std::endl;
+        std::cout << "Waiting for Wiegand data..." << std::endl;
 
         while(running) {
-            // Wait for events with short timeout so we can check for frame end
-            auto evd0 = d0.event_wait(std::chrono::milliseconds(50));
+            // Check both lines with short timeout
+            auto evd0 = d0.event_wait(std::chrono::milliseconds(5));
+            auto evd1 = d1.event_wait(std::chrono::microseconds(100));
+
+            bool got_bit = false;
             if(evd0) {
                 auto ev = d0.event_read();
-                // D0 low pulse indicates a 0 bit in Wiegand
-                // We'll treat any event on D0 as a 0 since we're monitoring both edges
-                bits.push_back(0);
-                last_event = std::chrono::steady_clock::now();
+                // Only count falling edges (start of pulse)
+                if(ev.event_type == gpiod::line_event::FALLING_EDGE) {
+                    bits.push_back(0);
+                    got_bit = true;
+                }
             }
 
-            auto evd1 = d1.event_wait(std::chrono::milliseconds(1));
             if(evd1) {
                 auto ev = d1.event_read();
-                // D1 event -> bit 1
-                bits.push_back(1);
+                if(ev.event_type == gpiod::line_event::FALLING_EDGE) {
+                    bits.push_back(1);
+                    got_bit = true;
+                }
+            }
+
+            if(got_bit) {
                 last_event = std::chrono::steady_clock::now();
             }
 
-            // Check for timeout (no new bits)
+            // Check for frame end (timeout after last bit)
             if(!bits.empty()) {
                 auto now = std::chrono::steady_clock::now();
                 if(now - last_event > timeout) {
-                    print_bits(bits);
+                    // Only process standard frame sizes
+                    if(bits.size() == 26 || bits.size() == 34) {
+                        print_bits(bits);
+                    } else {
+                        std::cout << "Got " << bits.size() << " bits - ignoring non-standard frame size" << std::endl;
+                    }
                     bits.clear();
                 }
             }
