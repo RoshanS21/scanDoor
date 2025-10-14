@@ -27,3 +27,7 @@ Wiring
 Notes
 - libgpiod accesses GPIO via /dev/gpiochipX; on Raspberry Pi 5 the kernel/gpiolib supports this interface.
 - You may need to run as root or grant access to /dev/gpiochip0.
+- The program validates parity bits for both 26-bit and 34-bit Wiegand formats
+- For 26-bit format: even parity (bit 0) over bits 1-12, odd parity (bit 25) over bits 13-24
+- For 34-bit format: even parity (bit 0) over bits 1-16, odd parity (bit 33) over bits 17-32
+- Press Ctrl+C to cleanly exit the program
