@@ -209,8 +209,11 @@ private:
             nlohmann::json event = {
                 {"type", "card_read"},
                 {"door_id", doorId_},
-                {"card_data", std::to_string(value)},
-                {"card_hex", "0x" + std::to_string(value)},
+                {"card_data", std::to_string(fullValue)},
+                {"card_hex", "0x" + std::to_string(fullValue)},
+                {"facility_code", facilityCode},
+                {"card_number", cardNumber},
+                {"parity_valid", evenParityValid && oddParityValid},
                 {"timestamp", std::chrono::system_clock::to_time_t(std::chrono::system_clock::now())}
             };
             eventCallback("door/" + doorId_ + "/card_read", event.dump());
