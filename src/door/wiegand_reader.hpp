@@ -18,8 +18,14 @@ public:
             d0_ = chip_->get_line(data0Pin_);
             d1_ = chip_->get_line(data1Pin_);
 
-            // Verify initial state
-            std::cout << "Initial pin states - D0: " << d0_.get_value() << " D1: " << d1_.get_value() << std::endl;
+            // Configure GPIO lines for event detection
+            gpiod::line_request config;
+            config.consumer = "door_reader";
+            config.request_type = gpiod::line_request::EVENT_BOTH_EDGES;
+            config.flags = gpiod::line_request::FLAG_BIAS_PULL_UP;
+
+            d0_.request(config);
+            d1_.request(config);
 
             running_ = true;
             readerThread_ = std::thread(&WiegandReader::readerLoop, this);
@@ -51,10 +57,6 @@ private:
         bool collecting = false;
         int debugPulseCount = 0;
         uint64_t d0Changes = 0, d1Changes = 0;
-
-        // Request lines with event detection
-        d0_.request({"door_reader", gpiod::line_request::EVENT_BOTH_EDGES, gpiod::line_request::FLAG_BIAS_PULL_UP});
-        d1_.request({"door_reader", gpiod::line_request::EVENT_BOTH_EDGES, gpiod::line_request::FLAG_BIAS_PULL_UP});
 
         std::cout << "Reader started on D0=" << data0Pin_ << " D1=" << data1Pin_ << std::endl;
         std::cout << "Initial states - D0: " << d0_.get_value() << " D1: " << d1_.get_value() << std::endl;
