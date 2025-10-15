@@ -34,12 +34,12 @@ public:
     }
 
     bool getState() const {
-        return currentState_;
+        return currentState_.load();
     }
 
 private:
     void monitorLoop() {
-        while (running_) {
+        while (running_.load()) {
             auto ev = line_.event_wait(std::chrono::milliseconds(100));
             if (ev) {
                 auto event = line_.event_read();
@@ -51,7 +51,7 @@ private:
                         nlohmann::json event;
                         event["type"] = sensorType_ + "_change";
                         event["door_id"] = doorId_;
-                        event["state"] = currentState_;
+                        event["state"] = currentState_.load();  // Get value from atomic
                         event["timestamp"] = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
                         eventCallback("door/" + doorId_ + "/" + sensorType_, event.dump());
                     }

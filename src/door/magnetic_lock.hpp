@@ -36,7 +36,7 @@ public:
     }
 
     bool getState() const override {
-        return currentState_;
+        return currentState_.load();
     }
 
 private:

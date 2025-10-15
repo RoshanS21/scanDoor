@@ -58,7 +58,7 @@ int main(int argc, char** argv) {
         logger->info("All doors initialized. Running main loop...");
 
         // Main loop
-        while (running) {
+        while (running.load()) {
             mqtt->loop();
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }

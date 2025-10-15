@@ -44,7 +44,7 @@ private:
         auto lastEvent = std::chrono::steady_clock::now();
         const auto timeout = std::chrono::milliseconds(30);
 
-        while (running_) {
+        while (running_.load()) {
             auto evd0 = d0_.event_wait(std::chrono::milliseconds(50));
             if (evd0) {
                 auto ev = d0_.event_read();
