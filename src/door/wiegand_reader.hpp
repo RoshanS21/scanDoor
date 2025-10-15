@@ -12,17 +12,30 @@ public:
 
     bool initialize() override {
         try {
+            std::cout << "Initializing Wiegand reader on pins D0=" << data0Pin_ << " D1=" << data1Pin_ << std::endl;
+            
             chip_ = std::make_unique<gpiod::chip>("/dev/gpiochip0");
             d0_ = chip_->get_line(data0Pin_);
             d1_ = chip_->get_line(data1Pin_);
 
-            d0_.request({"door_reader", gpiod::line_request::EVENT_BOTH_EDGES});
-            d1_.request({"door_reader", gpiod::line_request::EVENT_BOTH_EDGES});
+            // Configure with pull-ups and falling edge detection
+            gpiod::line_request req;
+            req.consumer = "door_reader";
+            req.request_type = gpiod::line_request::EVENT_FALLING_EDGE;
+            req.flags = gpiod::line_request::FLAG_BIAS_PULL_UP;
+
+            d0_.request(req);
+            d1_.request(req);
+
+            // Verify initial state
+            std::cout << "Initial pin states - D0: " << d0_.get_value() << " D1: " << d1_.get_value() << std::endl;
 
             running_ = true;
             readerThread_ = std::thread(&WiegandReader::readerLoop, this);
+            std::cout << "Reader thread started successfully" << std::endl;
             return true;
         } catch (const std::exception& e) {
+            std::cerr << "Reader initialization failed: " << e.what() << std::endl;
             return false;
         }
     }
@@ -42,44 +55,65 @@ private:
     void readerLoop() {
         std::vector<int> bits;
         auto lastEvent = std::chrono::steady_clock::now();
-        const auto timeout = std::chrono::milliseconds(30);
+        const auto timeout = std::chrono::milliseconds(50);  // Increased timeout
+        const auto pulseTimeout = std::chrono::microseconds(200); // Max time between D0/D1 pulses
         bool collecting = false;
+        int debugPulseCount = 0;
+
+        std::cout << "Reader started on D0=" << data0Pin_ << " D1=" << data1Pin_ << std::endl;
 
         while (running_.load()) {
-            // Check both lines with minimal delay between them
-            auto evd0 = d0_.event_wait(std::chrono::milliseconds(1));
-            auto evd1 = d1_.event_wait(std::chrono::milliseconds(1));
+            auto now = std::chrono::steady_clock::now();
+            
+            // Only wait for events if we're not in a collection timeout
+            if (!collecting || now - lastEvent < timeout) {
+                auto evd0 = d0_.event_wait(std::chrono::milliseconds(1));
+                auto evd1 = d1_.event_wait(std::chrono::milliseconds(1));
 
-            bool gotBit = false;
-
-            if (evd0) {
-                auto ev = d0_.event_read();
-                if (ev.event_type == gpiod::line_event::FALLING_EDGE) {
-                    bits.push_back(0);
-                    lastEvent = std::chrono::steady_clock::now();
-                    gotBit = true;
-                    collecting = true;
+                if (evd0) {
+                    auto ev = d0_.event_read();
+                    if (ev.event_type == gpiod::line_event::FALLING_EDGE) {
+                        if (!collecting) {
+                            std::cout << "\nStarting new bit collection" << std::endl;
+                            bits.clear();
+                            debugPulseCount = 0;
+                        }
+                        bits.push_back(0);
+                        lastEvent = now;
+                        collecting = true;
+                        debugPulseCount++;
+                    }
                 }
-            }
 
-            if (evd1) {
-                auto ev = d1_.event_read();
-                if (ev.event_type == gpiod::line_event::FALLING_EDGE) {
-                    bits.push_back(1);
-                    lastEvent = std::chrono::steady_clock::now();
-                    gotBit = true;
-                    collecting = true;
+                if (evd1) {
+                    auto ev = d1_.event_read();
+                    if (ev.event_type == gpiod::line_event::FALLING_EDGE) {
+                        if (!collecting) {
+                            std::cout << "\nStarting new bit collection" << std::endl;
+                            bits.clear();
+                            debugPulseCount = 0;
+                        }
+                        bits.push_back(1);
+                        lastEvent = now;
+                        collecting = true;
+                        debugPulseCount++;
+                    }
                 }
             }
 
             // If we're collecting and haven't gotten a bit recently, process what we have
-            if (collecting && std::chrono::steady_clock::now() - lastEvent > timeout) {
+            if (collecting && now - lastEvent > timeout) {
                 if (!bits.empty()) {
+                    std::cout << "Pulse count during collection: " << debugPulseCount << std::endl;
+                    std::cout << "Time since last bit: " << std::chrono::duration_cast<std::chrono::milliseconds>(now - lastEvent).count() << "ms" << std::endl;
                     processCard(bits);
                 }
                 bits.clear();
                 collecting = false;
             }
+            
+            // Small sleep to prevent busy waiting
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
 
             if (!bits.empty()) {
                 auto now = std::chrono::steady_clock::now();
