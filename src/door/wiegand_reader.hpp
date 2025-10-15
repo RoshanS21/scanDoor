@@ -144,21 +144,65 @@ private:
     }
 
     void processCard(const std::vector<int>& bits) {
+        if (bits.size() != 32) {
+            std::cout << "Invalid bit length: " << bits.size() << " (expected 32)" << std::endl;
+            return;
+        }
+
         std::cout << "\nReceived bits: ";
         for(int b : bits) std::cout << b;
         std::cout << " (Length: " << bits.size() << ")\n";
 
-        uint64_t value = 0;
-        for (size_t i = 0; i < bits.size(); i++) {
-            value = (value << 1) | bits[i];
+        // Calculate parity bits
+        bool evenParity = bits[0];  // First bit
+        bool oddParity = bits[31];  // Last bit
+
+        // Calculate expected even parity (first 16 bits including parity bit)
+        int evenCount = 0;
+        for (int i = 0; i < 16; i++) {
+            if (bits[i]) evenCount++;
+        }
+        bool evenParityValid = (evenCount % 2 == 0);
+
+        // Calculate expected odd parity (last 16 bits including parity bit)
+        int oddCount = 0;
+        for (int i = 16; i < 32; i++) {
+            if (bits[i]) oddCount++;
+        }
+        bool oddParityValid = (oddCount % 2 == 1);
+
+        // Extract facility code (bits 1-8)
+        uint16_t facilityCode = 0;
+        for (int i = 1; i < 9; i++) {
+            facilityCode = (facilityCode << 1) | bits[i];
         }
 
-        std::cout << "Card read - Hex: 0x" << std::hex << std::setfill('0') << std::setw(8) << value 
-                  << " Decimal: " << std::dec << value << std::endl;
+        // Extract card number (bits 9-24)
+        uint32_t cardNumber = 0;
+        for (int i = 9; i < 25; i++) {
+            cardNumber = (cardNumber << 1) | bits[i];
+        }
 
-        // Try to match with your known card format
-        if (value == 0x9d3b9f40) {
-            std::cout << "Matched known card format!" << std::endl;
+        // Calculate full value for hex display
+        uint32_t fullValue = 0;
+        for (size_t i = 0; i < bits.size(); i++) {
+            fullValue = (fullValue << 1) | bits[i];
+        }
+
+        // Output detailed card information
+        std::cout << "Card Details:" << std::endl;
+        std::cout << "  Full Hex: 0x" << std::hex << std::setfill('0') << std::setw(8) << fullValue << std::endl;
+        std::cout << "  Full Dec: " << std::dec << fullValue << std::endl;
+        std::cout << "  Facility Code: " << std::dec << facilityCode << std::endl;
+        std::cout << "  Card Number: " << std::dec << cardNumber << std::endl;
+        std::cout << "  Parity: " << (evenParityValid && oddParityValid ? "Valid" : "Invalid")
+                  << " (Even:" << evenParityValid << " Odd:" << oddParityValid << ")" << std::endl;
+
+        // Match known cards
+        if (fullValue == 0x9d3b9f40) {
+            std::cout << "  Status: Authorized (Known Card)" << std::endl;
+        } else {
+            std::cout << "  Status: Unknown Card" << std::endl;
         }
 
         if (eventCallback) {
