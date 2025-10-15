@@ -55,12 +55,14 @@ private:
     void readerLoop() {
         std::vector<int> bits;
         auto lastEvent = std::chrono::steady_clock::now();
-        const auto timeout = std::chrono::milliseconds(50);
-        const auto debounceTime = std::chrono::microseconds(500);
+        const auto timeout = std::chrono::milliseconds(100);  // Increased timeout
+        const auto debounceTime = std::chrono::microseconds(100);  // Reduced debounce
         bool collecting = false;
         int debugPulseCount = 0;
+        uint64_t d0Changes = 0, d1Changes = 0;  // Track total changes
 
         std::cout << "Reader started on D0=" << data0Pin_ << " D1=" << data1Pin_ << std::endl;
+        std::cout << "Reader using pull-up resistors, LOW = active" << std::endl;
         
         // Monitor initial states
         int last_d0 = d0_.get_value();
@@ -69,46 +71,61 @@ private:
         while (running_.load()) {
             auto now = std::chrono::steady_clock::now();
             
-            // Read current values
+            // Read current values with timing
+            auto beforeRead = std::chrono::steady_clock::now();
             int current_d0 = d0_.get_value();
             int current_d1 = d1_.get_value();
+            auto readTime = std::chrono::steady_clock::now() - beforeRead;
             
-            // Debug state changes
+            // Debug state changes with microsecond timing
             if (current_d0 != last_d0) {
-                std::cout << "D0 changed: " << last_d0 << " -> " << current_d0 << std::endl;
+                d0Changes++;
+                std::cout << "D0 changed: " << last_d0 << " -> " << current_d0 
+                          << " (read took " << std::chrono::duration_cast<std::chrono::microseconds>(readTime).count() << "µs)"
+                          << " Total D0 changes: " << d0Changes << std::endl;
                 last_d0 = current_d0;
+                
+                // Start collecting on first D0 transition
+                if (!collecting) {
+                    std::cout << "\nStarting new bit collection (D0 transition)" << std::endl;
+                    bits.clear();
+                    debugPulseCount = 0;
+                    collecting = true;
+                }
             }
+            
             if (current_d1 != last_d1) {
-                std::cout << "D1 changed: " << last_d1 << " -> " << current_d1 << std::endl;
+                d1Changes++;
+                std::cout << "D1 changed: " << last_d1 << " -> " << current_d1 
+                          << " (read took " << std::chrono::duration_cast<std::chrono::microseconds>(readTime).count() << "µs)"
+                          << " Total D1 changes: " << d1Changes << std::endl;
                 last_d1 = current_d1;
+                
+                // Start collecting on first D1 transition
+                if (!collecting) {
+                    std::cout << "\nStarting new bit collection (D1 transition)" << std::endl;
+                    bits.clear();
+                    debugPulseCount = 0;
+                    collecting = true;
+                }
             }
 
-            // Only process if we're not in debounce time
-            if (now - lastEvent > debounceTime) {
-                // D0 = 0 bit
+            // Only process if we're collecting and not in debounce time
+            if (collecting && now - lastEvent > debounceTime) {
+                // D0 = 0 bit (active low)
                 if (current_d0 == 0) {
-                    if (!collecting) {
-                        std::cout << "\nStarting new bit collection (D0 triggered)" << std::endl;
-                        bits.clear();
-                        debugPulseCount = 0;
-                        collecting = true;
-                    }
                     bits.push_back(0);
                     lastEvent = now;
                     debugPulseCount++;
+                    std::cout << "Added bit 0 (from D0)" << std::endl;
                 }
 
-                // D1 = 1 bit
+                // D1 = 1 bit (active low)
                 if (current_d1 == 0) {
-                    if (!collecting) {
-                        std::cout << "\nStarting new bit collection (D1 triggered)" << std::endl;
-                        bits.clear();
-                        debugPulseCount = 0;
-                        collecting = true;
-                    }
                     bits.push_back(1);
                     lastEvent = now;
                     debugPulseCount++;
+                    std::cout << "Added bit 1 (from D1)" << std::endl;
                 }
             }
 
