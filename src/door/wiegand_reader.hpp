@@ -55,49 +55,60 @@ private:
     void readerLoop() {
         std::vector<int> bits;
         auto lastEvent = std::chrono::steady_clock::now();
-        const auto timeout = std::chrono::milliseconds(50);  // Increased timeout
-        const auto pulseTimeout = std::chrono::microseconds(200); // Max time between D0/D1 pulses
+        const auto timeout = std::chrono::milliseconds(50);
+        const auto debounceTime = std::chrono::microseconds(500);
         bool collecting = false;
         int debugPulseCount = 0;
 
         std::cout << "Reader started on D0=" << data0Pin_ << " D1=" << data1Pin_ << std::endl;
-
+        
+        // Monitor initial states
+        int last_d0 = d0_.get_value();
+        int last_d1 = d1_.get_value();
+        
         while (running_.load()) {
             auto now = std::chrono::steady_clock::now();
             
-            // Only wait for events if we're not in a collection timeout
-            if (!collecting || now - lastEvent < timeout) {
-                auto evd0 = d0_.event_wait(std::chrono::milliseconds(1));
-                auto evd1 = d1_.event_wait(std::chrono::milliseconds(1));
+            // Read current values
+            int current_d0 = d0_.get_value();
+            int current_d1 = d1_.get_value();
+            
+            // Debug state changes
+            if (current_d0 != last_d0) {
+                std::cout << "D0 changed: " << last_d0 << " -> " << current_d0 << std::endl;
+                last_d0 = current_d0;
+            }
+            if (current_d1 != last_d1) {
+                std::cout << "D1 changed: " << last_d1 << " -> " << current_d1 << std::endl;
+                last_d1 = current_d1;
+            }
 
-                if (evd0) {
-                    auto ev = d0_.event_read();
-                    if (ev.event_type == gpiod::line_event::FALLING_EDGE) {
-                        if (!collecting) {
-                            std::cout << "\nStarting new bit collection" << std::endl;
-                            bits.clear();
-                            debugPulseCount = 0;
-                        }
-                        bits.push_back(0);
-                        lastEvent = now;
+            // Only process if we're not in debounce time
+            if (now - lastEvent > debounceTime) {
+                // D0 = 0 bit
+                if (current_d0 == 0) {
+                    if (!collecting) {
+                        std::cout << "\nStarting new bit collection (D0 triggered)" << std::endl;
+                        bits.clear();
+                        debugPulseCount = 0;
                         collecting = true;
-                        debugPulseCount++;
                     }
+                    bits.push_back(0);
+                    lastEvent = now;
+                    debugPulseCount++;
                 }
 
-                if (evd1) {
-                    auto ev = d1_.event_read();
-                    if (ev.event_type == gpiod::line_event::FALLING_EDGE) {
-                        if (!collecting) {
-                            std::cout << "\nStarting new bit collection" << std::endl;
-                            bits.clear();
-                            debugPulseCount = 0;
-                        }
-                        bits.push_back(1);
-                        lastEvent = now;
+                // D1 = 1 bit
+                if (current_d1 == 0) {
+                    if (!collecting) {
+                        std::cout << "\nStarting new bit collection (D1 triggered)" << std::endl;
+                        bits.clear();
+                        debugPulseCount = 0;
                         collecting = true;
-                        debugPulseCount++;
                     }
+                    bits.push_back(1);
+                    lastEvent = now;
+                    debugPulseCount++;
                 }
             }
 
@@ -106,7 +117,13 @@ private:
                 if (!bits.empty()) {
                     std::cout << "Pulse count during collection: " << debugPulseCount << std::endl;
                     std::cout << "Time since last bit: " << std::chrono::duration_cast<std::chrono::milliseconds>(now - lastEvent).count() << "ms" << std::endl;
-                    processCard(bits);
+                    
+                    // Only process if we have enough bits for a valid card
+                    if (bits.size() >= 26) {
+                        processCard(bits);
+                    } else {
+                        std::cout << "Discarding short read: " << bits.size() << " bits" << std::endl;
+                    }
                 }
                 bits.clear();
                 collecting = false;
@@ -114,14 +131,6 @@ private:
             
             // Small sleep to prevent busy waiting
             std::this_thread::sleep_for(std::chrono::microseconds(100));
-
-            if (!bits.empty()) {
-                auto now = std::chrono::steady_clock::now();
-                if (now - lastEvent > timeout) {
-                    processCard(bits);
-                    bits.clear();
-                }
-            }
         }
     }
 
