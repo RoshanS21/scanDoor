@@ -110,36 +110,39 @@ private:
                 }
             }
 
-            // Only process if we're collecting and not in debounce time
-            if (collecting && now - lastEvent > debounceTime) {
-                // D0 = 0 bit (active low)
-                if (current_d0 == 0) {
+            // Only process if we're collecting
+            if (collecting) {
+                // Record bits on LOW to HIGH transitions (end of pulse)
+                if (current_d0 == 1 && last_d0 == 0) {
                     bits.push_back(0);
                     lastEvent = now;
                     debugPulseCount++;
-                    std::cout << "Added bit 0 (from D0)" << std::endl;
+                    std::cout << "Added bit 0 (from D0 transition)" << std::endl;
                 }
 
-                // D1 = 1 bit (active low)
-                if (current_d1 == 0) {
+                if (current_d1 == 1 && last_d1 == 0) {
                     bits.push_back(1);
                     lastEvent = now;
                     debugPulseCount++;
-                    std::cout << "Added bit 1 (from D1)" << std::endl;
+                    std::cout << "Added bit 1 (from D1 transition)" << std::endl;
                 }
             }
 
-            // If we're collecting and haven't gotten a bit recently, process what we have
+            // If we're collecting and timeout has passed, process what we have
             if (collecting && now - lastEvent > timeout) {
                 if (!bits.empty()) {
-                    std::cout << "Pulse count during collection: " << debugPulseCount << std::endl;
+                    std::cout << "\nCollection ended after " << debugPulseCount << " pulses" << std::endl;
                     std::cout << "Time since last bit: " << std::chrono::duration_cast<std::chrono::milliseconds>(now - lastEvent).count() << "ms" << std::endl;
+                    std::cout << "Total D0 changes: " << d0Changes << ", D1 changes: " << d1Changes << std::endl;
                     
                     // Only process if we have enough bits for a valid card
-                    if (bits.size() >= 26) {
+                    if (bits.size() >= 20) {  // Lowered to catch 26-bit cards that might have missing bits
                         processCard(bits);
                     } else {
                         std::cout << "Discarding short read: " << bits.size() << " bits" << std::endl;
+                        std::cout << "Bits received: ";
+                        for (int bit : bits) std::cout << bit;
+                        std::cout << std::endl;
                     }
                 }
                 bits.clear();
