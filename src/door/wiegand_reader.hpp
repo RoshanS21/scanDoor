@@ -12,29 +12,23 @@ public:
 
     bool initialize() override {
         try {
-            // Try GPIO22 for D0 instead of GPIO17
-            data0Pin_ = 22;
-            std::cout << "Initializing Wiegand reader on pins D0=" << data0Pin_ << " D1=" << data1Pin_ << std::endl;
+            data0Pin_ = 22;  // Using GPIO22 for D0 (more reliable than GPIO17)
             
             chip_ = std::make_unique<gpiod::chip>("/dev/gpiochip0");
             d0_ = chip_->get_line(data0Pin_);
             d1_ = chip_->get_line(data1Pin_);
 
-            // Configure GPIO lines for event detection
-            gpiod::line_request config;
-            config.consumer = "door_reader";
-            config.request_type = gpiod::line_request::EVENT_BOTH_EDGES;
-            config.flags = gpiod::line_request::FLAG_BIAS_PULL_UP;
+            // Configure GPIO for Wiegand reader
+            gpiod::line_request config{
+                .consumer = "door_reader",
+                .request_type = gpiod::line_request::EVENT_BOTH_EDGES,
+                .flags = gpiod::line_request::FLAG_BIAS_PULL_UP
+            };
 
             d0_.request(config);
             d1_.request(config);
 
-            // Check line capabilities
-            std::cout << "GPIO Configuration:" << std::endl;
-            std::cout << "D0 (GPIO" << data0Pin_ << ") pull-up: " 
-                     << (d0_.is_used() ? "in use" : "available") << std::endl;
-            std::cout << "D1 (GPIO" << data1Pin_ << ") pull-up: " 
-                     << (d1_.is_used() ? "in use" : "available") << std::endl;
+            spdlog::info("Wiegand reader initialized on D0={} D1={}", data0Pin_, data1Pin_);
 
             running_ = true;
             readerThread_ = std::thread(&WiegandReader::readerLoop, this);
@@ -62,161 +56,105 @@ private:
         std::vector<int> bits;
         auto lastEvent = std::chrono::steady_clock::now();
         const auto timeout = std::chrono::milliseconds(50);  // Standard Wiegand timing
-        const auto interBitTimeout = std::chrono::microseconds(5000);  // 5ms between bits
         bool collecting = false;
-        int debugPulseCount = 0;
-        uint64_t d0Changes = 0, d1Changes = 0;
 
-        std::cout << "Reader started on D0=" << data0Pin_ << " D1=" << data1Pin_ << std::endl;
-        std::cout << "Initial states - D0: " << d0_.get_value() << " D1: " << d1_.get_value() << std::endl;
-        
-        // Monitor initial states
-        int last_d0 = d0_.get_value();
-        int last_d1 = d1_.get_value();
+        spdlog::info("Reader started on D0={} D1={}", data0Pin_, data1Pin_);
         
         while (running_.load()) {
             auto now = std::chrono::steady_clock::now();
             
-            // Wait for events on both lines with a short timeout
+            // Wait for events on both lines
             auto ev_d0 = d0_.event_wait(std::chrono::microseconds(100));
             auto ev_d1 = d1_.event_wait(std::chrono::microseconds(100));
             
             if (ev_d0) {
                 auto event = d0_.event_read();
-                d0Changes++;
-                
                 if (event.event_type == gpiod::line_event::FALLING_EDGE) {
                     if (!collecting) {
-                        std::cout << "\nStarting new bit collection (D0 pulse)" << std::endl;
                         bits.clear();
-                        debugPulseCount = 0;
                         collecting = true;
                     }
                     bits.push_back(0);
                     lastEvent = now;
-                    debugPulseCount++;
-                    // std::cout << "Added bit 0 (D0 pulse)" << std::endl;
                 }
             }
             
             if (ev_d1) {
                 auto event = d1_.event_read();
-                d1Changes++;
-                
                 if (event.event_type == gpiod::line_event::FALLING_EDGE) {
                     if (!collecting) {
-                        std::cout << "\nStarting new bit collection (D1 pulse)" << std::endl;
                         bits.clear();
-                        debugPulseCount = 0;
                         collecting = true;
                     }
                     bits.push_back(1);
                     lastEvent = now;
-                    debugPulseCount++;
-                    // std::cout << "Added bit 1 (D1 pulse)" << std::endl;
                 }
             }
 
-            // If we're collecting and timeout has passed, process what we have
+                }
+            }
+
+            // Process collected bits after timeout
             if (collecting && now - lastEvent > timeout) {
-                if (!bits.empty()) {
-                    std::cout << "\nCollection ended after " << debugPulseCount << " pulses" << std::endl;
-                    std::cout << "Time since last bit: " << std::chrono::duration_cast<std::chrono::milliseconds>(now - lastEvent).count() << "ms" << std::endl;
-                    std::cout << "Total D0 changes: " << d0Changes << ", D1 changes: " << d1Changes << std::endl;
-                    
-                    // Only process if we have enough bits for a valid card
-                    if (bits.size() >= 20) {  // Lowered to catch 26-bit cards that might have missing bits
-                        processCard(bits);
-                    } else {
-                        std::cout << "Discarding short read: " << bits.size() << " bits" << std::endl;
-                        std::cout << "Bits received: ";
-                        for (int bit : bits) std::cout << bit;
-                        std::cout << std::endl;
-                    }
+                if (bits.size() == 32) {
+                    processCard(bits);
                 }
                 bits.clear();
                 collecting = false;
             }
             
-            // Small sleep to prevent busy waiting
+            // Prevent busy waiting
             std::this_thread::sleep_for(std::chrono::microseconds(100));
         }
     }
 
     void processCard(const std::vector<int>& bits) {
-        if (bits.size() != 32) {
-            std::cout << "Invalid bit length: " << bits.size() << " (expected 32)" << std::endl;
-            return;
-        }
+        // Calculate parity bits and validate
+        bool evenParity = bits[0];
+        bool oddParity = bits[31];
+        int evenCount = std::count_if(bits.begin(), bits.begin() + 16, [](int b) { return b == 1; });
+        int oddCount = std::count_if(bits.begin() + 16, bits.end(), [](int b) { return b == 1; });
+        bool parityValid = (evenCount % 2 == 0) && (oddCount % 2 == 1);
 
-        std::cout << "\nReceived bits: ";
-        for(int b : bits) std::cout << b;
-        std::cout << " (Length: " << bits.size() << ")\n";
-
-        // Calculate parity bits
-        bool evenParity = bits[0];  // First bit
-        bool oddParity = bits[31];  // Last bit
-
-        // Calculate expected even parity (first 16 bits including parity bit)
-        int evenCount = 0;
-        for (int i = 0; i < 16; i++) {
-            if (bits[i]) evenCount++;
-        }
-        bool evenParityValid = (evenCount % 2 == 0);
-
-        // Calculate expected odd parity (last 16 bits including parity bit)
-        int oddCount = 0;
-        for (int i = 16; i < 32; i++) {
-            if (bits[i]) oddCount++;
-        }
-        bool oddParityValid = (oddCount % 2 == 1);
-
-        // Extract facility code (bits 1-8)
+        // Extract card data
         uint16_t facilityCode = 0;
         for (int i = 1; i < 9; i++) {
             facilityCode = (facilityCode << 1) | bits[i];
         }
 
-        // Extract card number (bits 9-24)
         uint32_t cardNumber = 0;
         for (int i = 9; i < 25; i++) {
             cardNumber = (cardNumber << 1) | bits[i];
         }
 
-        // Calculate full value for hex display
-        uint32_t fullValue = 0;
-        for (size_t i = 0; i < bits.size(); i++) {
-            fullValue = (fullValue << 1) | bits[i];
-        }
+        uint32_t fullValue = std::accumulate(bits.begin(), bits.end(), 0u, 
+            [](uint32_t acc, int bit) { return (acc << 1) | bit; });
 
-        // Output detailed card information
-        std::cout << "Card Details:" << std::endl;
-        std::cout << "  Full Hex: 0x" << std::hex << std::setfill('0') << std::setw(8) << fullValue << std::endl;
-        std::cout << "  Full Dec: " << std::dec << fullValue << std::endl;
-        std::cout << "  Facility Code: " << std::dec << facilityCode << std::endl;
-        std::cout << "  Card Number: " << std::dec << cardNumber << std::endl;
-        std::cout << "  Parity: " << (evenParityValid && oddParityValid ? "Valid" : "Invalid")
-                  << " (Even:" << evenParityValid << " Odd:" << oddParityValid << ")" << std::endl;
+        // Log card details
+        spdlog::info("Card Read - FC:{} CN:{} Raw:0x{:08x} Parity:{}",
+            facilityCode, cardNumber, fullValue, parityValid ? "Valid" : "Invalid");
 
-        // Match known cards
-        if (fullValue == 0x9d3b9f40) {
-            std::cout << "  Status: Authorized (Known Card)" << std::endl;
-        } else {
-            std::cout << "  Status: Unknown Card" << std::endl;
-        }
+        // Known card check
+        bool isAuthorized = (fullValue == 0x9d3b9f40);
+        spdlog::info("Access {}", isAuthorized ? "Granted" : "Denied");
 
+        // Emit MQTT event
         if (eventCallback) {
             nlohmann::json event = {
-                {"type", "card_read"},
+                {"event", "access_attempt"},
                 {"door_id", doorId_},
-                {"card_data", std::to_string(fullValue)},
-                {"card_hex", "0x" + std::to_string(fullValue)},
-                {"facility_code", facilityCode},
-                {"card_number", cardNumber},
-                {"parity_valid", evenParityValid && oddParityValid},
+                {"card", {
+                    {"raw", std::format("{:#010x}", fullValue)},
+                    {"facility_code", facilityCode},
+                    {"number", cardNumber}
+                }},
+                {"access", {
+                    {"granted", fullValue == 0x9d3b9f40},
+                    {"parity_valid", parityValid}
+                }},
                 {"timestamp", std::chrono::system_clock::to_time_t(std::chrono::system_clock::now())}
             };
-            eventCallback("door/" + doorId_ + "/card_read", event.dump());
+            eventCallback("access/" + doorId_, event.dump());
         }
     }
 
