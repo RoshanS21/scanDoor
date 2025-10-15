@@ -142,16 +142,31 @@ private:
         uint32_t fullValue = std::accumulate(bits.begin(), bits.end(), 0u, 
             [](uint32_t acc, int bit) { return (acc << 1) | bit; });
 
-        // Log card details
+        // Convert bits to string for logging
+        std::string bitStr;
+        for (int b : bits) bitStr += std::to_string(b);
+
+        // Format hex value
         std::stringstream hexValue;
         hexValue << "0x" << std::hex << std::setfill('0') << std::setw(8) << fullValue;
 
-        spdlog::info("Card Read - FC:{} CN:{} Raw:{} Parity:{}",
-            facilityCode, cardNumber, hexValue.str(), parityValid ? "Valid" : "Invalid");
-
-        // Known card check
-        bool isAuthorized = (fullValue == 0x9d3b9f40);
-        spdlog::info("Access {}", isAuthorized ? "Granted" : "Denied");
+        // Log all card details in one structured message
+        spdlog::info("\nReceived bits: {} (Length: {})\n"
+                    "Card Details:\n"
+                    "  Full Hex: {}\n"
+                    "  Full Dec: {}\n"
+                    "  Facility Code: {}\n"
+                    "  Card Number: {}\n"
+                    "  Parity: {} (Even:{} Odd:{})\n"
+                    "  Status: {}", 
+                    bitStr, bits.size(),
+                    hexValue.str(),
+                    fullValue,
+                    facilityCode,
+                    cardNumber,
+                    parityValid ? "Valid" : "Invalid", 
+                    evenCount % 2 == 0, oddCount % 2 == 1,
+                    fullValue == 0x9d3b9f40 ? "Authorized (Known Card)" : "Unknown Card");
 
         // Emit MQTT event
         if (eventCallback) {
