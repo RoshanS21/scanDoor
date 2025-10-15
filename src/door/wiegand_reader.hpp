@@ -95,7 +95,7 @@ private:
                     bits.push_back(0);
                     lastEvent = now;
                     debugPulseCount++;
-                    std::cout << "Added bit 0 (D0 pulse)" << std::endl;
+                    // std::cout << "Added bit 0 (D0 pulse)" << std::endl;
                 }
             }
             
@@ -113,7 +113,7 @@ private:
                     bits.push_back(1);
                     lastEvent = now;
                     debugPulseCount++;
-                    std::cout << "Added bit 1 (D1 pulse)" << std::endl;
+                    // std::cout << "Added bit 1 (D1 pulse)" << std::endl;
                 }
             }
 
