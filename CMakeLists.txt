@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Find required packages
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBGPIOD REQUIRED libgpiodcxx libgpiod)
-find_package(Mosquitto REQUIRED)
+pkg_check_modules(MOSQUITTO REQUIRED libmosquitto)
 find_package(spdlog REQUIRED)
 
 # Include directories
