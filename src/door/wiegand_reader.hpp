@@ -18,15 +18,6 @@ public:
             d0_ = chip_->get_line(data0Pin_);
             d1_ = chip_->get_line(data1Pin_);
 
-            // Configure with pull-ups and falling edge detection
-            gpiod::line_request req;
-            req.consumer = "door_reader";
-            req.request_type = gpiod::line_request::EVENT_FALLING_EDGE;
-            req.flags = gpiod::line_request::FLAG_BIAS_PULL_UP;
-
-            d0_.request(req);
-            d1_.request(req);
-
             // Verify initial state
             std::cout << "Initial pin states - D0: " << d0_.get_value() << " D1: " << d1_.get_value() << std::endl;
 
@@ -55,14 +46,18 @@ private:
     void readerLoop() {
         std::vector<int> bits;
         auto lastEvent = std::chrono::steady_clock::now();
-        const auto timeout = std::chrono::milliseconds(100);  // Increased timeout
-        const auto debounceTime = std::chrono::microseconds(100);  // Reduced debounce
+        const auto timeout = std::chrono::milliseconds(50);  // Standard Wiegand timing
+        const auto interBitTimeout = std::chrono::microseconds(5000);  // 5ms between bits
         bool collecting = false;
         int debugPulseCount = 0;
-        uint64_t d0Changes = 0, d1Changes = 0;  // Track total changes
+        uint64_t d0Changes = 0, d1Changes = 0;
+
+        // Request lines with event detection
+        d0_.request({"door_reader", gpiod::line_request::EVENT_BOTH_EDGES, gpiod::line_request::FLAG_BIAS_PULL_UP});
+        d1_.request({"door_reader", gpiod::line_request::EVENT_BOTH_EDGES, gpiod::line_request::FLAG_BIAS_PULL_UP});
 
         std::cout << "Reader started on D0=" << data0Pin_ << " D1=" << data1Pin_ << std::endl;
-        std::cout << "Reader using pull-up resistors, LOW = active" << std::endl;
+        std::cout << "Initial states - D0: " << d0_.get_value() << " D1: " << d1_.get_value() << std::endl;
         
         // Monitor initial states
         int last_d0 = d0_.get_value();
@@ -71,60 +66,43 @@ private:
         while (running_.load()) {
             auto now = std::chrono::steady_clock::now();
             
-            // Read current values with timing
-            auto beforeRead = std::chrono::steady_clock::now();
-            int current_d0 = d0_.get_value();
-            int current_d1 = d1_.get_value();
-            auto readTime = std::chrono::steady_clock::now() - beforeRead;
+            // Wait for events on both lines with a short timeout
+            auto ev_d0 = d0_.event_wait(std::chrono::microseconds(100));
+            auto ev_d1 = d1_.event_wait(std::chrono::microseconds(100));
             
-            // Debug state changes with microsecond timing
-            if (current_d0 != last_d0) {
+            if (ev_d0) {
+                auto event = d0_.event_read();
                 d0Changes++;
-                std::cout << "D0 changed: " << last_d0 << " -> " << current_d0 
-                          << " (read took " << std::chrono::duration_cast<std::chrono::microseconds>(readTime).count() << "µs)"
-                          << " Total D0 changes: " << d0Changes << std::endl;
-                last_d0 = current_d0;
                 
-                // Start collecting on first D0 transition
-                if (!collecting) {
-                    std::cout << "\nStarting new bit collection (D0 transition)" << std::endl;
-                    bits.clear();
-                    debugPulseCount = 0;
-                    collecting = true;
-                }
-            }
-            
-            if (current_d1 != last_d1) {
-                d1Changes++;
-                std::cout << "D1 changed: " << last_d1 << " -> " << current_d1 
-                          << " (read took " << std::chrono::duration_cast<std::chrono::microseconds>(readTime).count() << "µs)"
-                          << " Total D1 changes: " << d1Changes << std::endl;
-                last_d1 = current_d1;
-                
-                // Start collecting on first D1 transition
-                if (!collecting) {
-                    std::cout << "\nStarting new bit collection (D1 transition)" << std::endl;
-                    bits.clear();
-                    debugPulseCount = 0;
-                    collecting = true;
-                }
-            }
-
-            // Only process if we're collecting
-            if (collecting) {
-                // Record bits on LOW to HIGH transitions (end of pulse)
-                if (current_d0 == 1 && last_d0 == 0) {
+                if (event.event_type == gpiod::line_event::FALLING_EDGE) {
+                    if (!collecting) {
+                        std::cout << "\nStarting new bit collection (D0 pulse)" << std::endl;
+                        bits.clear();
+                        debugPulseCount = 0;
+                        collecting = true;
+                    }
                     bits.push_back(0);
                     lastEvent = now;
                     debugPulseCount++;
-                    std::cout << "Added bit 0 (from D0 transition)" << std::endl;
+                    std::cout << "Added bit 0 (D0 pulse)" << std::endl;
                 }
-
-                if (current_d1 == 1 && last_d1 == 0) {
+            }
+            
+            if (ev_d1) {
+                auto event = d1_.event_read();
+                d1Changes++;
+                
+                if (event.event_type == gpiod::line_event::FALLING_EDGE) {
+                    if (!collecting) {
+                        std::cout << "\nStarting new bit collection (D1 pulse)" << std::endl;
+                        bits.clear();
+                        debugPulseCount = 0;
+                        collecting = true;
+                    }
                     bits.push_back(1);
                     lastEvent = now;
                     debugPulseCount++;
-                    std::cout << "Added bit 1 (from D1 transition)" << std::endl;
+                    std::cout << "Added bit 1 (D1 pulse)" << std::endl;
                 }
             }
 
