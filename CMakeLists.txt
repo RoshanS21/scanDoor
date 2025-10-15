@@ -9,6 +9,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBGPIOD REQUIRED libgpiodcxx libgpiod)
 pkg_check_modules(MOSQUITTO REQUIRED libmosquitto)
 find_package(spdlog REQUIRED)
+find_package(nlohmann_json 3.10.5 REQUIRED)
 
 # Include directories
 include_directories(

@@ -48,12 +48,11 @@ private:
                 if (newState != currentState_) {
                     currentState_ = newState;
                     if (eventCallback) {
-                        nlohmann::json event = {
-                            {"type", sensorType_ + "_change"},
-                            {"door_id", doorId_},
-                            {"state", currentState_},
-                            {"timestamp", std::chrono::system_clock::to_time_t(std::chrono::system_clock::now())}
-                        };
+                        nlohmann::json event;
+                        event["type"] = sensorType_ + "_change";
+                        event["door_id"] = doorId_;
+                        event["state"] = currentState_;
+                        event["timestamp"] = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
                         eventCallback("door/" + doorId_ + "/" + sensorType_, event.dump());
                     }
                 }

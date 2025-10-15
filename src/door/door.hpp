@@ -2,6 +2,8 @@
 #include <memory>
 #include <spdlog/spdlog.h>
 #include "../core/door_types.hpp"
+#include "../utils/logger.hpp"
+#include <nlohmann/json.hpp>
 #include "wiegand_reader.hpp"
 #include "gpio_sensor.hpp"
 #include "magnetic_lock.hpp"

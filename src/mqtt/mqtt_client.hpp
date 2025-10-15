@@ -1,6 +1,7 @@
 #pragma once
 #include <mosquitto.h>
 #include <string>
+#include <nlohmann/json.hpp>
 #include <functional>
 #include <memory>
 #include <spdlog/spdlog.h>

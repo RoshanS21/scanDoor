@@ -1,3 +1,5 @@
+#pragma once
+
 // Base interface for all door components
 class IDoorComponent {
 public:
