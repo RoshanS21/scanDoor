@@ -12,6 +12,8 @@ public:
 
     bool initialize() override {
         try {
+            // Try GPIO22 for D0 instead of GPIO17
+            data0Pin_ = 22;
             std::cout << "Initializing Wiegand reader on pins D0=" << data0Pin_ << " D1=" << data1Pin_ << std::endl;
             
             chip_ = std::make_unique<gpiod::chip>("/dev/gpiochip0");
@@ -26,6 +28,13 @@ public:
 
             d0_.request(config);
             d1_.request(config);
+
+            // Check line capabilities
+            std::cout << "GPIO Configuration:" << std::endl;
+            std::cout << "D0 (GPIO" << data0Pin_ << ") pull-up: " 
+                     << (d0_.is_used() ? "in use" : "available") << std::endl;
+            std::cout << "D1 (GPIO" << data1Pin_ << ") pull-up: " 
+                     << (d1_.is_used() ? "in use" : "available") << std::endl;
 
             running_ = true;
             readerThread_ = std::thread(&WiegandReader::readerLoop, this);
