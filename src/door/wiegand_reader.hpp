@@ -43,24 +43,42 @@ private:
         std::vector<int> bits;
         auto lastEvent = std::chrono::steady_clock::now();
         const auto timeout = std::chrono::milliseconds(30);
+        bool collecting = false;
 
         while (running_.load()) {
-            auto evd0 = d0_.event_wait(std::chrono::milliseconds(50));
+            // Check both lines with minimal delay between them
+            auto evd0 = d0_.event_wait(std::chrono::milliseconds(1));
+            auto evd1 = d1_.event_wait(std::chrono::milliseconds(1));
+
+            bool gotBit = false;
+
             if (evd0) {
                 auto ev = d0_.event_read();
                 if (ev.event_type == gpiod::line_event::FALLING_EDGE) {
                     bits.push_back(0);
                     lastEvent = std::chrono::steady_clock::now();
+                    gotBit = true;
+                    collecting = true;
                 }
             }
 
-            auto evd1 = d1_.event_wait(std::chrono::microseconds(100));
             if (evd1) {
                 auto ev = d1_.event_read();
                 if (ev.event_type == gpiod::line_event::FALLING_EDGE) {
                     bits.push_back(1);
                     lastEvent = std::chrono::steady_clock::now();
+                    gotBit = true;
+                    collecting = true;
                 }
+            }
+
+            // If we're collecting and haven't gotten a bit recently, process what we have
+            if (collecting && std::chrono::steady_clock::now() - lastEvent > timeout) {
+                if (!bits.empty()) {
+                    processCard(bits);
+                }
+                bits.clear();
+                collecting = false;
             }
 
             if (!bits.empty()) {
@@ -74,22 +92,22 @@ private:
     }
 
     void processCard(const std::vector<int>& bits) {
-        std::cout << "Received bits: ";
+        std::cout << "\nReceived bits: ";
         for(int b : bits) std::cout << b;
         std::cout << " (Length: " << bits.size() << ")\n";
 
-        if (bits.size() != 32) {
-            std::cout << "Ignoring non-32-bit card format\n";
-            return;
-        }
-
-        uint32_t value = 0;
-        for (size_t i = 0; i < 32; i++) {
+        uint64_t value = 0;
+        for (size_t i = 0; i < bits.size(); i++) {
             value = (value << 1) | bits[i];
         }
 
-        std::cout << "Card read - Hex: 0x" << std::hex << value << std::dec 
-                  << " Decimal: " << value << std::endl;
+        std::cout << "Card read - Hex: 0x" << std::hex << std::setfill('0') << std::setw(8) << value 
+                  << " Decimal: " << std::dec << value << std::endl;
+
+        // Try to match with your known card format
+        if (value == 0x9d3b9f40) {
+            std::cout << "Matched known card format!" << std::endl;
+        }
 
         if (eventCallback) {
             nlohmann::json event = {
