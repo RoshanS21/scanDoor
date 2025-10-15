@@ -4,8 +4,23 @@
 #include "../core/door_types.hpp"
 #include <chrono>
 #include <thread>
+#include <spdlog/spdlog.h>
+#include <nlohmann/json.hpp>
+#include <algorithm>
+#include <numeric>
+#include <sstream>
+#include <iomanip>
 
 class WiegandReader : public IDoorComponent, public IEventEmitter {
+private:
+    std::string doorId_;
+    unsigned int data0Pin_, data1Pin_;
+    std::unique_ptr<gpiod::chip> chip_;
+    gpiod::line d0_, d1_;
+    std::atomic<bool> running_{false};
+    std::thread readerThread_;
+    std::function<void(const std::string&, const std::string&)> eventCallback;
+
 public:
     WiegandReader(const std::string& doorId, unsigned int data0Pin, unsigned int data1Pin)
         : doorId_(doorId), data0Pin_(data0Pin), data1Pin_(data1Pin) {}
@@ -32,10 +47,10 @@ public:
 
             running_ = true;
             readerThread_ = std::thread(&WiegandReader::readerLoop, this);
-            std::cout << "Reader thread started successfully" << std::endl;
+            spdlog::info("Reader thread started successfully");
             return true;
         } catch (const std::exception& e) {
-            std::cerr << "Reader initialization failed: " << e.what() << std::endl;
+            spdlog::error("Reader initialization failed: {}", e.what());
             return false;
         }
     }
@@ -91,9 +106,6 @@ private:
                 }
             }
 
-                }
-            }
-
             // Process collected bits after timeout
             if (collecting && now - lastEvent > timeout) {
                 if (bits.size() == 32) {
@@ -131,8 +143,11 @@ private:
             [](uint32_t acc, int bit) { return (acc << 1) | bit; });
 
         // Log card details
-        spdlog::info("Card Read - FC:{} CN:{} Raw:0x{:08x} Parity:{}",
-            facilityCode, cardNumber, fullValue, parityValid ? "Valid" : "Invalid");
+        std::stringstream hexValue;
+        hexValue << "0x" << std::hex << std::setfill('0') << std::setw(8) << fullValue;
+
+        spdlog::info("Card Read - FC:{} CN:{} Raw:{} Parity:{}",
+            facilityCode, cardNumber, hexValue.str(), parityValid ? "Valid" : "Invalid");
 
         // Known card check
         bool isAuthorized = (fullValue == 0x9d3b9f40);
@@ -140,15 +155,15 @@ private:
 
         // Emit MQTT event
         if (eventCallback) {
-            nlohmann::json event = {
+            nlohmann::json event = nlohmann::json{
                 {"event", "access_attempt"},
                 {"door_id", doorId_},
-                {"card", {
-                    {"raw", std::format("{:#010x}", fullValue)},
+                {"card", nlohmann::json{
+                    {"raw", hexValue.str()},
                     {"facility_code", facilityCode},
                     {"number", cardNumber}
                 }},
-                {"access", {
+                {"access", nlohmann::json{
                     {"granted", fullValue == 0x9d3b9f40},
                     {"parity_valid", parityValid}
                 }},
@@ -157,11 +172,4 @@ private:
             eventCallback("access/" + doorId_, event.dump());
         }
     }
-
-    std::string doorId_;
-    unsigned int data0Pin_, data1Pin_;
-    std::unique_ptr<gpiod::chip> chip_;
-    gpiod::line d0_, d1_;
-    std::atomic<bool> running_{false};
-    std::thread readerThread_;
 };
