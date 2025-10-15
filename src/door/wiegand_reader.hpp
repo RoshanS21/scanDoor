@@ -74,18 +74,29 @@ private:
     }
 
     void processCard(const std::vector<int>& bits) {
-        if (bits.size() != 32) return; // We're only handling 32-bit cards for now
+        std::cout << "Received bits: ";
+        for(int b : bits) std::cout << b;
+        std::cout << " (Length: " << bits.size() << ")\n";
+
+        if (bits.size() != 32) {
+            std::cout << "Ignoring non-32-bit card format\n";
+            return;
+        }
 
         uint32_t value = 0;
         for (size_t i = 0; i < 32; i++) {
             value = (value << 1) | bits[i];
         }
 
+        std::cout << "Card read - Hex: 0x" << std::hex << value << std::dec 
+                  << " Decimal: " << value << std::endl;
+
         if (eventCallback) {
             nlohmann::json event = {
                 {"type", "card_read"},
                 {"door_id", doorId_},
                 {"card_data", std::to_string(value)},
+                {"card_hex", "0x" + std::to_string(value)},
                 {"timestamp", std::chrono::system_clock::to_time_t(std::chrono::system_clock::now())}
             };
             eventCallback("door/" + doorId_ + "/card_read", event.dump());

@@ -47,28 +47,49 @@ public:
 
     bool initialize() {
         bool success = true;
-        success &= reader_->initialize();
-        success &= doorSensor_->initialize();
-        success &= proximitySensor_->initialize();
-        success &= exitButton_->initialize();
-        success &= lock_->initialize();
-
-        if (success) {
-            setupEventHandlers();
-            logger_->info("Door {} initialized successfully", config_.doorId);
-        } else {
-            logger_->error("Door {} initialization failed", config_.doorId);
+        
+        // Reader is required
+        if (!reader_->initialize()) {
+            logger_->error("Door {} - Failed to initialize card reader", config_.doorId);
+            return false;
+        }
+        
+        // Optional components - log warnings but don't fail if they're not connected
+        if (doorSensor_) {
+            if (!doorSensor_->initialize()) {
+                logger_->warn("Door {} - Door sensor initialization failed, continuing without it", config_.doorId);
+            }
+        }
+        
+        if (proximitySensor_) {
+            if (!proximitySensor_->initialize()) {
+                logger_->warn("Door {} - Proximity sensor initialization failed, continuing without it", config_.doorId);
+            }
+        }
+        
+        if (exitButton_) {
+            if (!exitButton_->initialize()) {
+                logger_->warn("Door {} - Exit button initialization failed, continuing without it", config_.doorId);
+            }
+        }
+        
+        if (lock_) {
+            if (!lock_->initialize()) {
+                logger_->warn("Door {} - Lock initialization failed, continuing without it", config_.doorId);
+            }
         }
 
-        return success;
+        setupEventHandlers();
+        logger_->info("Door {} initialized with card reader", config_.doorId);
+        return true;
     }
 
     void cleanup() {
-        reader_->cleanup();
-        doorSensor_->cleanup();
-        proximitySensor_->cleanup();
-        exitButton_->cleanup();
-        lock_->cleanup();
+        if (reader_) reader_->cleanup();
+        if (doorSensor_) doorSensor_->cleanup();
+        if (proximitySensor_) proximitySensor_->cleanup();
+        if (exitButton_) exitButton_->cleanup();
+        if (lock_) lock_->cleanup();
     }
 
 private:
