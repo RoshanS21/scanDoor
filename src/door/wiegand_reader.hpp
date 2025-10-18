@@ -12,15 +12,6 @@
 #include <iomanip>
 
 class WiegandReader : public IDoorComponent, public IEventEmitter {
-private:
-    std::string doorId_;
-    unsigned int data0Pin_, data1Pin_;
-    std::unique_ptr<gpiod::chip> chip_;
-    gpiod::line d0_, d1_;
-    std::atomic<bool> running_{false};
-    std::thread readerThread_;
-    std::function<void(const std::string&, const std::string&)> eventCallback;
-
 public:
     WiegandReader(const std::string& doorId, unsigned int data0Pin, unsigned int data1Pin)
         : doorId_(doorId), data0Pin_(data0Pin), data1Pin_(data1Pin) {}
@@ -187,4 +178,12 @@ private:
             eventCallback("access/" + doorId_, event.dump());
         }
     }
+
+    std::string doorId_;
+    unsigned int data0Pin_, data1Pin_;
+    std::unique_ptr<gpiod::chip> chip_;
+    gpiod::line d0_, d1_;
+    std::atomic<bool> running_{false};
+    std::thread readerThread_;
+    std::function<void(const std::string&, const std::string&)> eventCallback;
 };
