@@ -34,8 +34,8 @@ public:
                                                   "exit_button");
         
         lock_ = std::make_unique<MagneticLock>(config.doorId,
-                                              config.lock.pin,
-                                              config.lock.activeLow);
+                                              config.lock.setPin,
+                                              config.lock.unsetPin);
 
         // Initialize logger
         Logger::initialize(config.doorId);

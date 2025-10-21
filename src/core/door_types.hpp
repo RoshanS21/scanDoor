@@ -24,8 +24,8 @@ struct DoorConfig {
         bool activeHigh;
     } exitButton;
     struct {
-        unsigned int pin;
-        bool activeLow;  // Most magnetic locks are active-low
+        unsigned int setPin;
+        unsigned int unsetPin;
     } lock;
 };
 
