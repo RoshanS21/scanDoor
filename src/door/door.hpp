@@ -106,6 +106,7 @@ private:
             state_.isDoorOpen = doorSensor_->getState();
             mqtt_->publish(topic, message);
             logger_->info("Door sensor event on door {}: {}", config_.doorId, message);
+            spdlog::info("Door sensor event on door {}: {}", config_.doorId, message);
         });
 
         // Proximity sensor events

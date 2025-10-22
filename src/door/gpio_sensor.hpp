@@ -12,7 +12,7 @@ public:
         try {
             chip_ = std::make_unique<gpiod::chip>("/dev/gpiochip0");
             line_ = chip_->get_line(pin_);
-            line_.request({"door_sensor", gpiod::line_request::EVENT_BOTH_EDGES});
+            line_.request({"door_sensor", gpiod::line_request::EVENT_BOTH_EDGES, gpiod::line_request::FLAG_BIAS_PULL_UP});
             
             running_ = true;
             sensorThread_ = std::thread(&GpioSensor::monitorLoop, this);

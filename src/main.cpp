@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
             {
                 .doorId = "front",
                 .reader = {17, 27},      // DATA0, DATA1
-                .doorSensor = {22, true},      // GPIO22, active high
+                .doorSensor = {16, false},      // GPIO16, active high
                 .proximitySensor = {23, true},  // GPIO23, active high
                 .exitButton = {24, true},       // GPIO24, active high
                 .lock = {25, 26}                // GPIO25 (SET), GPIO26 (UNSET)

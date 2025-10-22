@@ -2,6 +2,7 @@
 #include <gpiod.hpp>
 #include <thread>
 #include <chrono>
+#include <spdlog/spdlog.h>
 #include "../core/interfaces.hpp"
 
 class MagneticLock : public IDoorComponent, public IControllable {
@@ -39,10 +40,12 @@ public:
         try {
             // Latching relay control - pulse the appropriate line
             if (locked) {
+                spdlog::info("Locking door {}", doorId_);
                 setLine_.set_value(1);
                 std::this_thread::sleep_for(std::chrono::milliseconds(50)); // 50ms pulse
                 setLine_.set_value(0);
             } else {
+                spdlog::info("Unlocking door {}", doorId_);
                 unsetLine_.set_value(1);
                 std::this_thread::sleep_for(std::chrono::milliseconds(50)); // 50ms pulse
                 unsetLine_.set_value(0);
