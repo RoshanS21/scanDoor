@@ -8,6 +8,29 @@
 #include "gpio_sensor.hpp"
 #include "magnetic_lock.hpp"
 #include "../mqtt/mqtt_client.hpp"
+#include <unordered_map>
+
+enum class AccessLevel {
+    REGULAR,
+    ITAR,
+    ITAR_SERVER_ROOM
+};
+
+const std::unordered_map<std::string, std::vector<AccessLevel>> ALLOWED_HEX_CARDS = {
+    {"0x9d3b9f1a", {AccessLevel::REGULAR}},
+    {"0x1d397065", {AccessLevel::REGULAR, AccessLevel::ITAR, AccessLevel::ITAR_SERVER_ROOM}}
+};
+
+const std::unordered_map<AccessLevel, std::string> ACCESS_LEVEL_NAMES = {
+    {AccessLevel::REGULAR, "Regular"},
+    {AccessLevel::ITAR, "ITAR"},
+    {AccessLevel::ITAR_SERVER_ROOM, "ITAR Server Room"}
+};
+
+const std::unordered_map<std::string, std::string> CARD_USER_NAMES = {
+    {"0x9d3b9f1a", "Durga"},
+    {"0x1d397065", "Raven"}
+};
 
 class Door {
 public:
@@ -134,9 +157,44 @@ private:
     }
 
     void handleCardRead(const std::string& message) {
-        // TODO: Implement card validation logic
-        // For now, just unlock the door temporarily
-        unlockTemporarily();
+        try {
+            nlohmann::json event = nlohmann::json::parse(message);
+            if (event.contains("card") && event["card"].contains("raw")) {
+                std::string rawHexValue = event["card"]["raw"].get<std::string>();
+                logger_->info("Received card read event. Card Raw Hex: {}", rawHexValue);
+                if (ALLOWED_HEX_CARDS.count(rawHexValue) > 0) {
+                    auto cardIt = ALLOWED_HEX_CARDS.find(rawHexValue);
+                    if (cardIt != ALLOWED_HEX_CARDS.end()) {
+                        auto nameIt = CARD_USER_NAMES.find(rawHexValue);
+                        if (nameIt != CARD_USER_NAMES.end()) {
+                            logger_->info("Access GRANTED (Card found in whitelist) to user: {}).", nameIt->second);
+                            spdlog::info("Access GRANTED (Card found in whitelist) to user: {}).", nameIt->second);
+                        }
+                        else {
+                            logger_->info("Access GRANTED (Card found in whitelist).");
+                            spdlog::info("Access GRANTED (Card found in whitelist).");
+                        }
+
+                        unlockTemporarily();
+                    }
+                } else {
+                    logger_->info("Access DENIED (Card NOT in whitelist).");
+                    spdlog::info("Access DENIED (Card NOT in whitelist).");
+                }
+            } else {
+                logger_->error("Error: JSON message missing 'card' or 'raw' fields.");
+                spdlog::error("Error: JSON message missing 'card' or 'raw' fields.");
+            }
+        } catch (const nlohmann::json::parse_error& e) {
+            logger_->error("JSON Parse Error: {} on message: {}", e.what(), message);
+            spdlog::error("JSON Parse Error: {} on message: {}", e.what(), message);
+        } catch (const nlohmann::json::exception& e) {
+            logger_->error("JSON Access Error: {}", e.what());
+            spdlog::error("JSON Access Error: {}", e.what());
+        } catch (const std::exception& e) {
+            logger_->error("Standard Exception: {}", e.what());
+            spdlog::error("Standard Exception: {}", e.what());
+        }
     }
 
     void handleProximityEvent() {

@@ -17,9 +17,7 @@ public:
         : doorId_(doorId), data0Pin_(data0Pin), data1Pin_(data1Pin) {}
 
     bool initialize() override {
-        try {
-            data0Pin_ = 22;  // Using GPIO22 for D0 (more reliable than GPIO17)
-            
+        try {            
             chip_ = std::make_unique<gpiod::chip>("/dev/gpiochip0");
             d0_ = chip_->get_line(data0Pin_);
             d1_ = chip_->get_line(data1Pin_);
@@ -148,16 +146,14 @@ private:
                     "  Full Dec: {}\n"
                     "  Facility Code: {}\n"
                     "  Card Number: {}\n"
-                    "  Parity: {} (Even:{} Odd:{})\n"
-                    "  Status: {}", 
+                    "  Parity: {} (Even:{} Odd:{})\n",
                     bitStr, bits.size(),
                     hexValue.str(),
                     fullValue,
                     facilityCode,
                     cardNumber,
                     parityValid ? "Valid" : "Invalid", 
-                    evenCount % 2 == 0, oddCount % 2 == 1,
-                    fullValue == 0x9d3b9f40 ? "Authorized (Known Card)" : "Unknown Card");
+                    evenCount % 2 == 0, oddCount % 2 == 1);
 
         // Emit MQTT event
         if (eventCallback) {

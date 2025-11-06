@@ -34,8 +34,8 @@ int main(int argc, char** argv) {
         // Configure doors
         std::vector<DoorConfig> doorConfigs = {
             {
-                .doorId = "front",
-                .reader = {17, 27},      // DATA0, DATA1
+                .doorId = "Cubicle Door",
+                .reader = {22, 27},      // DATA0, DATA1
                 .doorSensor = {16, false},      // GPIO16, active high
                 .proximitySensor = {23, true},  // GPIO23, active high
                 .exitButton = {24, true},       // GPIO24, active high
