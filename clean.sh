@@ -13,3 +13,10 @@ rm -rf logs/*.log
 rm -f core.*
 
 echo "Clean-up complete. Build directory and logs removed."
+echo
+echo "# Create build directory and build"
+echo "mkdir build"
+echo "cd build"
+echo "cmake .."
+echo "make -j4"
+echo

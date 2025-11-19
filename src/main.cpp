@@ -7,13 +7,16 @@
 
 std::atomic<bool> running(true);
 
-void signalHandler(int signal) {
-    if (signal == SIGINT || signal == SIGTERM) {
+void signalHandler(int signal)
+{
+    if (signal == SIGINT || signal == SIGTERM)
+    {
         running.store(false);
     }
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     // Setup signal handling
     signal(SIGINT, signalHandler);
     signal(SIGTERM, signalHandler);
@@ -23,16 +26,19 @@ int main(int argc, char** argv) {
     spdlog::set_default_logger(logger);
     logger->info("Door Control System Starting...");
 
-    try {
+    try
+    {
         // Initialize MQTT client
         auto mqtt = std::make_shared<MqttClient>("door_controller");
-        if (!mqtt->connect()) {
+        if (!mqtt->connect())
+        {
             logger->error("Failed to connect to MQTT broker");
             return 1;
         }
 
         // Configure doors
-        std::vector<DoorConfig> doorConfigs = {
+        std::vector<DoorConfig> doorConfigs =
+        {
             {
                 .doorId = "Cubicle Door",
                 .reader = {22, 27},      // DATA0, DATA1
@@ -46,9 +52,11 @@ int main(int argc, char** argv) {
 
         // Initialize doors
         std::vector<std::unique_ptr<Door>> doors;
-        for (const auto& config : doorConfigs) {
+        for (const auto& config : doorConfigs)
+        {
             auto door = std::make_unique<Door>(config, mqtt);
-            if (!door->initialize()) {
+            if (!door->initialize())
+            {
                 logger->error("Failed to initialize door {}", config.doorId);
                 return 1;
             }
@@ -58,18 +66,22 @@ int main(int argc, char** argv) {
         logger->info("All doors initialized. Running main loop...");
 
         // Main loop
-        while (running.load()) {
+        while (running.load())
+        {
             mqtt->loop();
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
 
         // Cleanup
         logger->info("Shutting down...");
-        for (auto& door : doors) {
+        for (auto& door : doors)
+        {
             door->cleanup();
         }
 
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception& e)
+    {
         logger->error("Fatal error: {}", e.what());
         return 1;
     }

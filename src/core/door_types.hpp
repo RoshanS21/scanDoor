@@ -5,32 +5,42 @@
 #include "interfaces.hpp"
 
 // Configuration structure for a door
-struct DoorConfig {
+struct DoorConfig
+{
     std::string doorId;
-    struct {
+    struct
+    {
         unsigned int data0Pin;
         unsigned int data1Pin;
     } reader;
-    struct {
+
+    struct
+    {
         unsigned int pin;
         bool activeHigh;
     } doorSensor;
-    struct {
+
+    struct
+    {
         unsigned int pin;
         bool activeHigh;
     } proximitySensor;
-    struct {
+
+    struct
+    {
         unsigned int pin;
         bool activeHigh;
     } exitButton;
-    struct {
+
+    struct
+    {
         unsigned int setPin;
         unsigned int unsetPin;
     } lock;
 };
 
-// Door state class to track all states
-class DoorState {
+class DoorState
+{
 public:
     bool isLocked{true};
     bool isDoorOpen{false};
@@ -39,8 +49,10 @@ public:
     std::string lastCardRead;
     std::chrono::system_clock::time_point lastEventTime;
 
-    nlohmann::json toJson() const {
-        return {
+    nlohmann::json toJson() const
+    {
+        return
+        {
             {"locked", isLocked},
             {"open", isDoorOpen},
             {"proximityDetected", isProximityDetected},

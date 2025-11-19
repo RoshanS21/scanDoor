@@ -2,14 +2,24 @@
 #include <gpiod.hpp>
 #include "../core/interfaces.hpp"
 
-class GpioSensor : public IDoorComponent, public IEventEmitter {
+class GpioSensor : public IDoorComponent, public IEventEmitter
+{
 public:
-    GpioSensor(const std::string& doorId, unsigned int pin, bool activeHigh, 
-               const std::string& sensorType)
-        : doorId_(doorId), pin_(pin), activeHigh_(activeHigh), sensorType_(sensorType) {}
+    GpioSensor(const std::string& doorId,
+        unsigned int pin,
+        bool activeHigh, 
+        const std::string& sensorType)
+    : doorId_(doorId)
+    , pin_(pin)
+    , activeHigh_(activeHigh)
+    , sensorType_(sensorType)
+    {
+    }
 
-    bool initialize() override {
-        try {
+    bool initialize() override
+    {
+        try
+        {
             chip_ = std::make_unique<gpiod::chip>("/dev/gpiochip0");
             line_ = chip_->get_line(pin_);
             line_.request({"door_sensor", gpiod::line_request::EVENT_BOTH_EDGES, gpiod::line_request::FLAG_BIAS_PULL_UP});
@@ -17,37 +27,48 @@ public:
             running_ = true;
             sensorThread_ = std::thread(&GpioSensor::monitorLoop, this);
             return true;
-        } catch (const std::exception& e) {
+        }
+        catch (const std::exception& e)
+        {
             return false;
         }
     }
 
-    void cleanup() override {
+    void cleanup() override
+    {
         running_ = false;
-        if (sensorThread_.joinable()) {
+        if (sensorThread_.joinable())
+        {
             sensorThread_.join();
         }
     }
 
-    void registerCallback(std::function<void(const std::string&, const std::string&)> callback) override {
+    void registerCallback(std::function<void(const std::string&, const std::string&)> callback) override
+    {
         eventCallback = std::move(callback);
     }
 
-    bool getState() const {
+    bool getState() const
+    {
         return currentState_.load();
     }
 
 private:
-    void monitorLoop() {
-        while (running_.load()) {
+    void monitorLoop()
+    {
+        while (running_.load())
+        {
             auto ev = line_.event_wait(std::chrono::milliseconds(100));
-            if (ev) {
+            if (ev)
+            {
                 auto event = line_.event_read();
                 bool newState = (line_.get_value() == 1) == activeHigh_;
                 
-                if (newState != currentState_) {
+                if (newState != currentState_)
+                {
                     currentState_ = newState;
-                    if (eventCallback) {
+                    if (eventCallback)
+                    {
                         nlohmann::json event;
                         event["type"] = sensorType_ + "_change";
                         event["door_id"] = doorId_;

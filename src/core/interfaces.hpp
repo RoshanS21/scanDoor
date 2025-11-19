@@ -1,7 +1,8 @@
 #pragma once
 
 // Base interface for all door components
-class IDoorComponent {
+class IDoorComponent
+{
 public:
     virtual ~IDoorComponent() = default;
     virtual bool initialize() = 0;
@@ -9,7 +10,8 @@ public:
 };
 
 // Base interface for components that can emit events
-class IEventEmitter {
+class IEventEmitter
+{
 public:
     virtual ~IEventEmitter() = default;
     virtual void registerCallback(std::function<void(const std::string&, const std::string&)> callback) = 0;
@@ -18,7 +20,8 @@ protected:
 };
 
 // Base interface for components that can be controlled
-class IControllable {
+class IControllable
+{
 public:
     virtual ~IControllable() = default;
     virtual bool setState(bool state) = 0;

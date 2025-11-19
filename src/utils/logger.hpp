@@ -4,9 +4,11 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <memory>
 
-class Logger {
+class Logger
+{
 public:
-    static void initialize(const std::string& doorId) {
+    static void initialize(const std::string& doorId)
+    {
         auto doorLogger = spdlog::rotating_logger_mt(
             "door_" + doorId,
             "logs/door_" + doorId + ".log",
@@ -16,7 +18,8 @@ public:
         doorLogger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%n] [%l] %v");
     }
 
-    static std::shared_ptr<spdlog::logger> getDoorLogger(const std::string& doorId) {
+    static std::shared_ptr<spdlog::logger> getDoorLogger(const std::string& doorId)
+    {
         return spdlog::get("door_" + doorId);
     }
 };
