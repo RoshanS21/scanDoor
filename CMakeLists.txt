@@ -21,7 +21,7 @@ message(STATUS "libgpiod major version: ${LIBGPIOD_MAJOR_VERSION}")
 
 # Define GPIOD_V2_API for libgpiod v2.x and later
 if(LIBGPIOD_MAJOR_VERSION GREATER_EQUAL 2)
-    set(GPIOD_VERSION_FLAG -DGPIOD_V2_API)
+    set(GPIOD_VERSION_FLAG GPIOD_V2_API)
     message(STATUS "Using libgpiod v2.x API")
 else()
     set(GPIOD_VERSION_FLAG "")
@@ -37,7 +37,9 @@ include_directories(
 )
 
 # Add compile definitions globally for all targets
-add_compile_definitions(${GPIOD_VERSION_FLAG})
+if(GPIOD_VERSION_FLAG)
+    add_compile_definitions(${GPIOD_VERSION_FLAG})
+endif()
 
 # Add subdirectories
 add_subdirectory(src/core)

@@ -29,23 +29,8 @@ namespace gpio_compat
     class Chip
     {
     public:
-        explicit Chip(const std::string& device_path)
-        {
-            try
-            {
-                chip_ = std::make_unique<gpiod::chip>(device_path);
-                spdlog::debug("GPIO chip initialized from {}", device_path);
-            }
-            catch (const std::exception& e)
-            {
-                spdlog::error("Failed to initialize GPIO chip: {}", e.what());
-                throw;
-            }
-        }
-
+        explicit Chip(const std::string& device_path);
         Line get_line(unsigned int offset);
-
-        gpiod::chip* get_raw() { return chip_.get(); }
 
     private:
         std::unique_ptr<gpiod::chip> chip_;
@@ -69,23 +54,36 @@ namespace gpio_compat
     private:
         friend class Chip;
 
+        gpiod::line line_;
+        
 #ifdef GPIOD_V2_API
         // libgpiod v2.x - using request objects
-        gpiod::line line_;
         std::unique_ptr<gpiod::line_request> request_;
         std::optional<gpiod::line_event> last_event_;
 
         void init_v2(gpiod::line line) { line_ = line; }
-
 #else
         // libgpiod v1.x - direct line objects
-        gpiod::line line_;
-
         void init_v1(gpiod::line line) { line_ = line; }
 #endif
     };
 
-    // Implementation
+    // ============ Implementation ============
+
+    // Chip implementation
+    inline Chip::Chip(const std::string& device_path)
+    {
+        try
+        {
+            chip_ = std::make_unique<gpiod::chip>(device_path);
+            spdlog::debug("GPIO chip initialized from {}", device_path);
+        }
+        catch (const std::exception& e)
+        {
+            spdlog::error("Failed to initialize GPIO chip: {}", e.what());
+            throw;
+        }
+    }
 
 #ifdef GPIOD_V2_API
     // ============ libgpiod v2.x Implementation ============
@@ -95,8 +93,12 @@ namespace gpio_compat
         try
         {
             auto line = chip_->get_line(offset);
+            if (!line)
+            {
+                throw std::runtime_error("Failed to get GPIO line " + std::to_string(offset));
+            }
             Line wrapped;
-            wrapped.init_v2(line);
+            wrapped.init_v2(line.value());
             return wrapped;
         }
         catch (const std::exception& e)
