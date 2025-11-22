@@ -1,5 +1,5 @@
 #pragma once
-#include <gpiod.hpp>
+#include "gpio_compat.hpp"
 #include "../core/interfaces.hpp"
 #include "../core/door_types.hpp"
 #include <chrono>
@@ -27,20 +27,13 @@ public:
     {
         try
         {
-            chip_ = std::make_unique<gpiod::chip>("/dev/gpiochip0");
+            chip_ = std::make_unique<gpio_compat::Chip>("/dev/gpiochip0");
             d0_ = chip_->get_line(data0Pin_);
             d1_ = chip_->get_line(data1Pin_);
 
-            // Configure GPIO for Wiegand reader
-            gpiod::line_request config
-            {
-                .consumer = "door_reader",
-                .request_type = gpiod::line_request::EVENT_BOTH_EDGES,
-                .flags = gpiod::line_request::FLAG_BIAS_PULL_UP
-            };
-
-            d0_.request(config);
-            d1_.request(config);
+            // Configure GPIO for Wiegand reader with event detection
+            d0_.request_events("door_reader_d0", true);
+            d1_.request_events("door_reader_d1", true);
 
             spdlog::info("Wiegand reader initialized on D0={} D1={}", data0Pin_, data1Pin_);
 
@@ -91,7 +84,7 @@ private:
             if (ev_d0)
             {
                 auto event = d0_.event_read();
-                if (event.event_type == gpiod::line_event::FALLING_EDGE)
+                if (event && event.value() == gpio_compat::EdgeEvent::FALLING_EDGE)
                 {
                     if (!collecting)
                     {
@@ -106,7 +99,7 @@ private:
             if (ev_d1)
             {
                 auto event = d1_.event_read();
-                if (event.event_type == gpiod::line_event::FALLING_EDGE)
+                if (event && event.value() == gpio_compat::EdgeEvent::FALLING_EDGE)
                 {
                     if (!collecting)
                     {
@@ -207,8 +200,8 @@ private:
 
     std::string doorId_;
     unsigned int data0Pin_, data1Pin_;
-    std::unique_ptr<gpiod::chip> chip_;
-    gpiod::line d0_, d1_;
+    std::unique_ptr<gpio_compat::Chip> chip_;
+    gpio_compat::Line d0_, d1_;
     std::atomic<bool> running_{false};
     std::thread readerThread_;
     std::function<void(const std::string&, const std::string&)> eventCallback;

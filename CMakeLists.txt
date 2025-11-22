@@ -11,6 +11,23 @@ pkg_check_modules(MOSQUITTO REQUIRED libmosquitto)
 find_package(spdlog REQUIRED)
 find_package(nlohmann_json 3.10.5 REQUIRED)
 
+# Detect libgpiod version
+string(REGEX MATCH "([0-9]+)\\.([0-9]+)" LIBGPIOD_VERSION_MATCH "${LIBGPIOD_VERSION}")
+set(LIBGPIOD_MAJOR_VERSION "${CMAKE_MATCH_1}")
+set(LIBGPIOD_MINOR_VERSION "${CMAKE_MATCH_2}")
+
+message(STATUS "libgpiod version: ${LIBGPIOD_VERSION}")
+message(STATUS "libgpiod major version: ${LIBGPIOD_MAJOR_VERSION}")
+
+# Define GPIOD_V2_API for libgpiod v2.x and later
+if(LIBGPIOD_MAJOR_VERSION GREATER_EQUAL 2)
+    set(GPIOD_VERSION_FLAG -DGPIOD_V2_API)
+    message(STATUS "Using libgpiod v2.x API")
+else()
+    set(GPIOD_VERSION_FLAG "")
+    message(STATUS "Using libgpiod v1.x API")
+endif()
+
 # Include directories
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -18,6 +35,9 @@ include_directories(
     ${MOSQUITTO_INCLUDE_DIRS}
     ${SPDLOG_INCLUDE_DIRS}
 )
+
+# Add compile definitions globally for all targets
+add_compile_definitions(${GPIOD_VERSION_FLAG})
 
 # Add subdirectories
 add_subdirectory(src/core)

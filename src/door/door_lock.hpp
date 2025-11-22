@@ -1,5 +1,5 @@
 #pragma once
-#include <gpiod.hpp>
+#include "gpio_compat.hpp"
 #include <thread>
 #include <chrono>
 #include <spdlog/spdlog.h>
@@ -21,13 +21,13 @@ public:
     {
         try
         {
-            chip_ = std::make_unique<gpiod::chip>("/dev/gpiochip0");
+            chip_ = std::make_unique<gpio_compat::Chip>("/dev/gpiochip0");
             setLine_ = chip_->get_line(setPin_);
             unsetLine_ = chip_->get_line(unsetPin_);
             
             // Configure both lines as outputs
-            setLine_.request({"door_lock_set", gpiod::line_request::DIRECTION_OUTPUT});
-            unsetLine_.request({"door_lock_unset", gpiod::line_request::DIRECTION_OUTPUT});
+            setLine_.request("door_lock_set", gpio_compat::Direction::OUTPUT);
+            unsetLine_.request("door_lock_unset", gpio_compat::Direction::OUTPUT);
             
             // Initialize both lines to low
             setLine_.set_value(0);
@@ -86,8 +86,8 @@ private:
     std::string doorId_;
     unsigned int setPin_;
     unsigned int unsetPin_;
-    std::unique_ptr<gpiod::chip> chip_;
-    gpiod::line setLine_;
-    gpiod::line unsetLine_;
+    std::unique_ptr<gpio_compat::Chip> chip_;
+    gpio_compat::Line setLine_;
+    gpio_compat::Line unsetLine_;
     std::atomic<bool> currentState_{true};
 };

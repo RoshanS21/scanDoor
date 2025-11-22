@@ -1,5 +1,5 @@
 #pragma once
-#include <gpiod.hpp>
+#include "gpio_compat.hpp"
 #include "../core/interfaces.hpp"
 
 class GpioSensor : public IDoorComponent, public IEventEmitter
@@ -20,9 +20,9 @@ public:
     {
         try
         {
-            chip_ = std::make_unique<gpiod::chip>("/dev/gpiochip0");
+            chip_ = std::make_unique<gpio_compat::Chip>("/dev/gpiochip0");
             line_ = chip_->get_line(pin_);
-            line_.request({"door_sensor", gpiod::line_request::EVENT_BOTH_EDGES, gpiod::line_request::FLAG_BIAS_PULL_UP});
+            line_.request_events("door_sensor", true);
             
             running_ = true;
             sensorThread_ = std::thread(&GpioSensor::monitorLoop, this);
@@ -85,8 +85,8 @@ private:
     unsigned int pin_;
     bool activeHigh_;
     std::string sensorType_;
-    std::unique_ptr<gpiod::chip> chip_;
-    gpiod::line line_;
+    std::unique_ptr<gpio_compat::Chip> chip_;
+    gpio_compat::Line line_;
     std::atomic<bool> running_{false};
     std::atomic<bool> currentState_{false};
     std::thread sensorThread_;
