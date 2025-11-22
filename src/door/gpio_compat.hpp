@@ -57,13 +57,13 @@ namespace gpio_compat
 
 #ifdef GPIOD_V2_API
         // libgpiod v2.x - using request objects
-        std::shared_ptr<gpiod::chip> chip_;
+        gpiod::chip* chip_ptr_ = nullptr;
         std::shared_ptr<gpiod::line_request> request_;
         std::optional<gpiod::edge_event> last_event_;
 
-        void init_v2(std::shared_ptr<gpiod::chip> chip, unsigned int offset) 
+        void init_v2(gpiod::chip* chip, unsigned int offset) 
         { 
-            chip_ = chip; 
+            chip_ptr_ = chip; 
             offset_ = offset;
         }
 #else
@@ -99,7 +99,7 @@ namespace gpio_compat
         try
         {
             Line wrapped;
-            wrapped.init_v2(chip_, offset);
+            wrapped.init_v2(chip_.get(), offset);
             return wrapped;
         }
         catch (const std::exception& e)
@@ -128,7 +128,7 @@ namespace gpio_compat
                 }
             }
 
-            auto builder = chip_->prepare_request();
+            auto builder = chip_ptr_->prepare_request();
             builder.set_consumer(consumer);
             builder.add_line_settings(offset_, settings);
             request_ = std::make_shared<gpiod::line_request>(builder.do_request());
@@ -153,7 +153,7 @@ namespace gpio_compat
                 settings.set_bias(gpiod::line::bias::PULL_UP);
             }
 
-            auto builder = chip_->prepare_request();
+            auto builder = chip_ptr_->prepare_request();
             builder.set_consumer(consumer);
             builder.add_line_settings(offset_, settings);
             request_ = std::make_shared<gpiod::line_request>(builder.do_request());
@@ -205,11 +205,16 @@ namespace gpio_compat
         {
             if (request_)
             {
-                auto events = request_->wait_edge_events(timeout);
-                if (!events.empty())
+                // wait_edge_events returns bool - true if event available
+                if (request_->wait_edge_events(timeout))
                 {
-                    last_event_ = *events.begin();
-                    return true;
+                    // Read the edge event
+                    auto events = request_->read_edge_events();
+                    if (!events.empty())
+                    {
+                        last_event_ = *events.begin();
+                        return true;
+                    }
                 }
             }
             return false;
@@ -227,7 +232,7 @@ namespace gpio_compat
         {
             if (last_event_)
             {
-                auto edge_type = last_event_.value().get_event_type();
+                auto edge_type = last_event_.value().event_type;
                 last_event_.reset();
 
                 if (edge_type == gpiod::edge_event::FALLING_EDGE)
