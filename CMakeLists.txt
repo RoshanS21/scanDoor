@@ -15,9 +15,12 @@ find_package(nlohmann_json 3.10.5 REQUIRED)
 # In v2.x, line_request_builder exists; in v1.x it doesn't
 find_file(GPIOD_LINE_REQUEST_HEADER 
     NAMES "line-request.hpp"
-    PATHS ${LIBGPIOD_INCLUDE_DIRS}
+    PATHS ${LIBGPIOD_INCLUDE_DIRS} /usr/include /usr/include/gpiodcxx
     NO_DEFAULT_PATH
 )
+
+message(STATUS "LIBGPIOD_INCLUDE_DIRS: ${LIBGPIOD_INCLUDE_DIRS}")
+message(STATUS "GPIOD_LINE_REQUEST_HEADER: ${GPIOD_LINE_REQUEST_HEADER}")
 
 if(GPIOD_LINE_REQUEST_HEADER)
     file(READ "${GPIOD_LINE_REQUEST_HEADER}" GPIOD_HEADER_CONTENT)
