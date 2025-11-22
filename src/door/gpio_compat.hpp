@@ -208,11 +208,12 @@ namespace gpio_compat
                 // wait_edge_events returns bool - true if event available
                 if (request_->wait_edge_events(timeout))
                 {
-                    // Read the edge event
-                    auto events = request_->read_edge_events();
-                    if (!events.empty())
+                    // Read the edge event using a buffer
+                    gpiod::edge_event_buffer buffer;
+                    auto num_events = request_->read_edge_events(buffer, 1);
+                    if (num_events > 0)
                     {
-                        last_event_ = *events.begin();
+                        last_event_ = buffer.front();
                         return true;
                     }
                 }
@@ -232,14 +233,14 @@ namespace gpio_compat
         {
             if (last_event_)
             {
-                auto edge_type = last_event_.value().event_type;
+                auto edge_type = last_event_.value().get_event_type();
                 last_event_.reset();
 
-                if (edge_type == gpiod::edge_event::FALLING_EDGE)
+                if (edge_type == gpiod::edge_event::event_type::FALLING_EDGE)
                 {
                     return EdgeEvent::FALLING_EDGE;
                 }
-                else if (edge_type == gpiod::edge_event::RISING_EDGE)
+                else if (edge_type == gpiod::edge_event::event_type::RISING_EDGE)
                 {
                     return EdgeEvent::RISING_EDGE;
                 }
