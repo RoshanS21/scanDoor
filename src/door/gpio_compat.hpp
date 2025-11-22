@@ -233,7 +233,7 @@ namespace gpio_compat
                     for (const auto& event : buffer)
                     {
                         // event_type is a member variable, not a method
-                        auto et = event.event_type;
+                        auto et = event.type;
                         if (et == gpiod::edge_event::event_type::FALLING_EDGE)
                         {
                             return EdgeEvent::FALLING_EDGE;
