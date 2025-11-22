@@ -211,9 +211,9 @@ namespace gpio_compat
                     // Read the edge event using a buffer
                     gpiod::edge_event_buffer buffer;
                     auto num_events = request_->read_edge_events(buffer, 1);
-                    if (num_events > 0)
+                    if (num_events > 0 && !buffer.empty())
                     {
-                        last_event_ = buffer.front();
+                        last_event_ = buffer[0];
                         return true;
                     }
                 }
@@ -233,7 +233,7 @@ namespace gpio_compat
         {
             if (last_event_)
             {
-                auto edge_type = last_event_.value().get_event_type();
+                auto edge_type = last_event_.value().event_type;
                 last_event_.reset();
 
                 if (edge_type == gpiod::edge_event::event_type::FALLING_EDGE)
