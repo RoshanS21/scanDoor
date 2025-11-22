@@ -25,14 +25,15 @@ message(STATUS "GPIOD_LINE_REQUEST_HEADER: ${GPIOD_LINE_REQUEST_HEADER}")
 if(GPIOD_LINE_REQUEST_HEADER)
     file(READ "${GPIOD_LINE_REQUEST_HEADER}" GPIOD_HEADER_CONTENT)
     
-    if(GPIOD_HEADER_CONTENT MATCHES "line_request_builder")
+    # Check for v2.x specific patterns
+    if(GPIOD_HEADER_CONTENT MATCHES "class line_request" OR GPIOD_HEADER_CONTENT MATCHES "prepare_request")
         set(GPIOD_VERSION_FLAG GPIOD_V2_API)
-        message(STATUS "Detected libgpiod v2.x API (found line_request_builder)")
+        message(STATUS "Detected libgpiod v2.x API (found line_request class)")
     else()
-        message(STATUS "Using libgpiod v1.x API (line_request_builder not found)")
+        message(STATUS "Using libgpiod v1.x API")
     endif()
 else()
-    message(STATUS "Using libgpiod v1.x API (line-request.hpp not found in expected path)")
+    message(STATUS "Using libgpiod v1.x API (line-request.hpp not found)")
 endif()
 
 # Include directories
