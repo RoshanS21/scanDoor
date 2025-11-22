@@ -205,18 +205,8 @@ namespace gpio_compat
         {
             if (request_)
             {
-                // wait_edge_events returns bool - true if event available
-                if (request_->wait_edge_events(timeout))
-                {
-                    // Read the edge event using a buffer
-                    gpiod::edge_event_buffer buffer;
-                    auto num_events = request_->read_edge_events(buffer, 1);
-                    if (num_events > 0 && !buffer.empty())
-                    {
-                        last_event_ = buffer[0];
-                        return true;
-                    }
-                }
+                // v2.x: wait_edge_events returns bool, true if event is available
+                return request_->wait_edge_events(timeout);
             }
             return false;
         }
@@ -231,18 +221,27 @@ namespace gpio_compat
     {
         try
         {
-            if (last_event_)
+            if (request_)
             {
-                auto edge_type = last_event_.value().event_type;
-                last_event_.reset();
-
-                if (edge_type == gpiod::edge_event::event_type::FALLING_EDGE)
+                // v2.x: read_edge_events requires a buffer
+                gpiod::edge_event_buffer buffer;
+                auto num_events = request_->read_edge_events(buffer, 1);
+                
+                if (num_events > 0)
                 {
-                    return EdgeEvent::FALLING_EDGE;
-                }
-                else if (edge_type == gpiod::edge_event::event_type::RISING_EDGE)
-                {
-                    return EdgeEvent::RISING_EDGE;
+                    // Get the event type from the buffer
+                    for (const auto& event : buffer)
+                    {
+                        auto et = event.event_type();
+                        if (et == gpiod::edge_event::event_type::FALLING_EDGE)
+                        {
+                            return EdgeEvent::FALLING_EDGE;
+                        }
+                        else if (et == gpiod::edge_event::event_type::RISING_EDGE)
+                        {
+                            return EdgeEvent::RISING_EDGE;
+                        }
+                    }
                 }
             }
             return std::nullopt;
@@ -381,6 +380,8 @@ namespace gpio_compat
         {
             spdlog::error("Failed to read GPIO event: {}", e.what());
             return std::nullopt;
+        }
+    }
         }
     }
 
