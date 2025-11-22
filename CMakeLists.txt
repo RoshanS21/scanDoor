@@ -11,21 +11,25 @@ pkg_check_modules(MOSQUITTO REQUIRED libmosquitto)
 find_package(spdlog REQUIRED)
 find_package(nlohmann_json 3.10.5 REQUIRED)
 
-# Detect libgpiod version
-string(REGEX MATCH "([0-9]+)\\.([0-9]+)" LIBGPIOD_VERSION_MATCH "${LIBGPIOD_VERSION}")
-set(LIBGPIOD_MAJOR_VERSION "${CMAKE_MATCH_1}")
-set(LIBGPIOD_MINOR_VERSION "${CMAKE_MATCH_2}")
+# Detect libgpiod version by checking the header files
+# In v2.x, line_request_builder exists; in v1.x it doesn't
+find_file(GPIOD_LINE_REQUEST_HEADER 
+    NAMES "line-request.hpp"
+    PATHS ${LIBGPIOD_INCLUDE_DIRS}
+    NO_DEFAULT_PATH
+)
 
-message(STATUS "libgpiod version: ${LIBGPIOD_VERSION}")
-message(STATUS "libgpiod major version: ${LIBGPIOD_MAJOR_VERSION}")
-
-# Define GPIOD_V2_API for libgpiod v2.x and later
-if(LIBGPIOD_MAJOR_VERSION GREATER_EQUAL 2)
-    set(GPIOD_VERSION_FLAG GPIOD_V2_API)
-    message(STATUS "Using libgpiod v2.x API")
+if(GPIOD_LINE_REQUEST_HEADER)
+    file(READ "${GPIOD_LINE_REQUEST_HEADER}" GPIOD_HEADER_CONTENT)
+    
+    if(GPIOD_HEADER_CONTENT MATCHES "line_request_builder")
+        set(GPIOD_VERSION_FLAG GPIOD_V2_API)
+        message(STATUS "Detected libgpiod v2.x API (found line_request_builder)")
+    else()
+        message(STATUS "Using libgpiod v1.x API (line_request_builder not found)")
+    endif()
 else()
-    set(GPIOD_VERSION_FLAG "")
-    message(STATUS "Using libgpiod v1.x API")
+    message(STATUS "Using libgpiod v1.x API (line-request.hpp not found in expected path)")
 endif()
 
 # Include directories

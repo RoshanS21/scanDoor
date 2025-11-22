@@ -53,17 +53,23 @@ namespace gpio_compat
 
     private:
         friend class Chip;
+        unsigned int offset_ = 0;
 
-        gpiod::line line_;
-        
 #ifdef GPIOD_V2_API
         // libgpiod v2.x - using request objects
-        std::unique_ptr<gpiod::line_request> request_;
-        std::optional<gpiod::line_event> last_event_;
+        std::shared_ptr<gpiod::chip> chip_;
+        std::shared_ptr<gpiod::line_request> request_;
+        std::optional<gpiod::edge_event> last_event_;
 
-        void init_v2(gpiod::line line) { line_ = line; }
+        void init_v2(std::shared_ptr<gpiod::chip> chip, unsigned int offset) 
+        { 
+            chip_ = chip; 
+            offset_ = offset;
+        }
 #else
         // libgpiod v1.x - direct line objects
+        gpiod::line line_;
+
         void init_v1(gpiod::line line) { line_ = line; }
 #endif
     };
@@ -92,13 +98,8 @@ namespace gpio_compat
     {
         try
         {
-            auto line = chip_->get_line(offset);
-            if (!line)
-            {
-                throw std::runtime_error("Failed to get GPIO line " + std::to_string(offset));
-            }
             Line wrapped;
-            wrapped.init_v2(line.value());
+            wrapped.init_v2(chip_, offset);
             return wrapped;
         }
         catch (const std::exception& e)
@@ -112,23 +113,25 @@ namespace gpio_compat
     {
         try
         {
-            gpiod::line_request_builder builder(line_);
-            builder.set_consumer(consumer);
-
+            gpiod::line_settings settings;
+            
             if (direction == Direction::OUTPUT)
             {
-                builder.set_direction_output();
+                settings.set_direction(gpiod::line::direction::OUTPUT);
             }
             else
             {
-                builder.set_direction_input();
+                settings.set_direction(gpiod::line::direction::INPUT);
                 if (bias_pull_up)
                 {
-                    builder.set_bias_pull_up();
+                    settings.set_bias(gpiod::line::bias::PULL_UP);
                 }
             }
 
-            request_ = std::make_unique<gpiod::line_request>(builder.request());
+            auto builder = chip_->prepare_request();
+            builder.set_consumer(consumer);
+            builder.add_line_settings(offset_, settings);
+            request_ = std::make_shared<gpiod::line_request>(builder.do_request());
         }
         catch (const std::exception& e)
         {
@@ -141,17 +144,19 @@ namespace gpio_compat
     {
         try
         {
-            gpiod::line_request_builder builder(line_);
-            builder.set_consumer(consumer);
-            builder.set_direction_input();
-            builder.set_edge_detection(gpiod::edge::BOTH);
-
+            gpiod::line_settings settings;
+            settings.set_direction(gpiod::line::direction::INPUT);
+            settings.set_edge_detection(gpiod::line::edge::BOTH);
+            
             if (bias_pull_up)
             {
-                builder.set_bias_pull_up();
+                settings.set_bias(gpiod::line::bias::PULL_UP);
             }
 
-            request_ = std::make_unique<gpiod::line_request>(builder.request());
+            auto builder = chip_->prepare_request();
+            builder.set_consumer(consumer);
+            builder.add_line_settings(offset_, settings);
+            request_ = std::make_shared<gpiod::line_request>(builder.do_request());
         }
         catch (const std::exception& e)
         {
@@ -166,7 +171,8 @@ namespace gpio_compat
         {
             if (request_)
             {
-                return request_->get_value() ? 1 : 0;
+                auto value = request_->get_value(offset_);
+                return value == gpiod::line::value::ACTIVE ? 1 : 0;
             }
             return 0;
         }
@@ -183,7 +189,8 @@ namespace gpio_compat
         {
             if (request_)
             {
-                request_->set_value(value ? 1 : 0);
+                auto val = value ? gpiod::line::value::ACTIVE : gpiod::line::value::INACTIVE;
+                request_->set_value(offset_, val);
             }
         }
         catch (const std::exception& e)
@@ -198,10 +205,10 @@ namespace gpio_compat
         {
             if (request_)
             {
-                auto event = request_->wait_edge_event(timeout);
-                if (event)
+                auto events = request_->wait_edge_events(timeout);
+                if (!events.empty())
                 {
-                    last_event_ = event.value();
+                    last_event_ = *events.begin();
                     return true;
                 }
             }
@@ -220,14 +227,14 @@ namespace gpio_compat
         {
             if (last_event_)
             {
-                auto event_type = last_event_->get_event_type();
+                auto edge_type = last_event_.value().get_event_type();
                 last_event_.reset();
 
-                if (event_type == gpiod::edge_event::FALLING_EDGE)
+                if (edge_type == gpiod::edge_event::FALLING_EDGE)
                 {
                     return EdgeEvent::FALLING_EDGE;
                 }
-                else if (event_type == gpiod::edge_event::RISING_EDGE)
+                else if (edge_type == gpiod::edge_event::RISING_EDGE)
                 {
                     return EdgeEvent::RISING_EDGE;
                 }

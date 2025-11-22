@@ -1,81 +1,132 @@
-# Pi5 and Pi Zero 2W Compatibility Solution
+# Pi5 and Pi Zero 2W Compatibility - Final Solution
 
-## Overview
-The codebase now supports both Raspberry Pi 5 and Pi Zero 2W by using a compatibility layer that abstracts the differences between libgpiod v1.x (Pi5) and v2.x (Pi Zero 2W).
+## Problem
+The original codebase used libgpiod v1.x API which doesn't work on Pi Zero 2W (libgpiod v2.x). The APIs have significant differences:
 
-## Key Changes
+- **v1.x**: Direct line objects (`gpiod::line`) with struct-based configuration
+- **v2.x**: Line request builder pattern, individual lines managed through requests
 
-### 1. **New Compatibility Layer** (`src/door/gpio_compat.hpp`)
-- Provides a unified API wrapper around libgpiod for both versions
-- Automatically detects the version at compile time using CMake
-- Implements version-specific code paths for:
-  - **Line access**: v1.x uses direct `chip_->get_line()`, v2.x uses getter with optional return
-  - **Event configuration**: v1.x uses `line_request` structs with flags, v2.x uses `line_request_builder`
-  - **Line requests**: v1.x uses direct line requests, v2.x uses request objects
-  - **Event handling**: v1.x has `line_event`, v2.x has `line_event` with different accessors
+## Solution: Unified Compatibility Layer
 
-### 2. **Updated GPIO Headers**
-All three GPIO-using components now use `gpio_compat.hpp`:
-- `wiegand_reader.hpp` - Changed from `gpiod::chip`/`gpiod::line` to `gpio_compat::Chip`/`gpio_compat::Line`
-- `gpio_sensor.hpp` - Same conversion
-- `door_lock.hpp` - Same conversion
+### Architecture Changes
 
-**API Changes:**
-- `chip_->get_line(pin)` → `chip_->get_line(pin)` (compatible wrapper)
-- `line_.request(config)` → `line_.request_events()` or `line_.request()` with enum-based args
-- `event.event_type == gpiod::line_event::FALLING_EDGE` → `event.value() == gpio_compat::EdgeEvent::FALLING_EDGE`
-
-### 3. **CMakeLists.txt Detection**
-Added automatic version detection:
-```cmake
-# Extracts libgpiod major version from pkg-config
-# If version >= 2, defines GPIOD_V2_API preprocessor flag
-# Version info is printed during build for verification
+**Old approach** (would require separate branches):
+```
+Pi5 branch (libgpiod v1.x) ← separate code
+Pi Zero 2W branch (libgpiod v2.x) ← separate code
 ```
 
-## Benefits of This Approach vs. Separate Branches
+**New approach** (single codebase):
+```
+All code using gpio_compat API
+    ↓
+gpio_compat.hpp (detects version)
+    ├→ v1.x code path (Pi5)
+    └→ v2.x code path (Pi Zero 2W)
+```
 
-✅ **Single codebase** - One source of truth for both platforms
-✅ **Easy maintenance** - Bug fixes automatically apply to both versions
-✅ **Seamless switching** - Works correctly regardless of platform
-✅ **Automatic detection** - No manual configuration needed
-✅ **Clear separation** - All version-specific code in one place (gpio_compat.hpp)
+### Key Implementation Details
 
-## Building
+**1. Member Variables** - Stored at class level to support both versions:
+```cpp
+class Line {
+private:
+    unsigned int offset_;           // For v2.x (need offset with shared chip)
+    
+#ifdef GPIOD_V2_API
+    std::shared_ptr<gpiod::chip> chip_;
+    std::shared_ptr<gpiod::line_request> request_;
+    std::optional<gpiod::edge_event> last_event_;
+#else
+    gpiod::line line_;              // Direct line object in v1.x
+#endif
+};
+```
 
-### For Pi5 (libgpiod v1.x)
+**2. Unified API**:
+- `Line::request(consumer, direction, pull_up)` - Configure as input/output
+- `Line::request_events(consumer, pull_up)` - Configure for edge detection
+- `Line::get_value()` / `set_value()` - Read/write GPIO
+- `Line::event_wait(timeout)` / `event_read()` - Handle edge events
+
+**3. Version Detection** (`CMakeLists.txt`):
+- Searches for `line-request.hpp` in libgpiod include directories
+- Checks if file contains `line_request_builder` (v2.x indicator)
+- Sets `GPIOD_V2_API` preprocessor flag automatically
+- No manual configuration needed
+
+### libgpiod v2.x API Key Differences
+
+| Feature | v1.x | v2.x |
+|---------|------|------|
+| Line type | `gpiod::line` (class) | `gpiod::line_request` (class) + `gpiod::line::*` (namespace) |
+| Configuration | Struct: `line_request config{...}` | Builder: `line_settings().set_*()` |
+| Line access | Direct per line | Through request with offset |
+| Event handling | `line_.event_wait()` | `request_->wait_edge_events()` |
+| Value access | `line_.get_value()` | `request_->get_value(offset)` |
+
+### Updated Files
+
+1. **`src/door/gpio_compat.hpp`** - New compatibility layer
+   - Stores chip as shared_ptr for v2.x (allows multiple lines from same chip)
+   - Implements all methods twice: once for v1.x, once for v2.x
+   - Normalizes event types and API
+
+2. **`wiegand_reader.hpp`**, **`gpio_sensor.hpp`**, **`door_lock.hpp`**
+   - Replaced `gpiod::chip` → `gpio_compat::Chip`
+   - Replaced `gpiod::line` → `gpio_compat::Line`
+   - Updated API calls to use compatibility layer
+
+3. **`CMakeLists.txt`**
+   - Added automatic version detection
+   - Sets `GPIOD_V2_API` define when v2.x detected
+   - Prints detection result to user
+
+### Build Instructions
+
+Same for both platforms:
 ```bash
 cd build
 cmake ..
 make -j4
 ```
-Will automatically detect v1.x and compile with v1.x code paths.
 
-### For Pi Zero 2W (libgpiod v2.x)
-```bash
-cd build
-cmake ..
-make -j4
+CMake will automatically detect libgpiod version and compile appropriately.
+
+### Build Output
+
+**Pi Zero 2W (v2.x):**
 ```
-Will automatically detect v2.x and compile with v2.x code paths.
-
-## Testing
-
-During build, CMake will print messages like:
-```
-libgpiod version: 2.0.0
-libgpiod major version: 2
-Using libgpiod v2.x API
+-- Detected libgpiod v2.x API (found line_request_builder)
+-- Configuring done
 ```
 
-This confirms the correct version was detected.
+**Pi5 (v1.x):**
+```
+-- Using libgpiod v1.x API (line_request_builder not found)
+-- Configuring done
+```
 
-## Future Maintenance
+## Benefits
 
-If libgpiod receives future updates:
-1. Add new version-specific code paths to `gpio_compat.hpp`
-2. Update the CMakeLists.txt version detection logic
-3. No changes needed to the main GPIO headers
+✅ **Single codebase** works on both Pi5 and Pi Zero 2W  
+✅ **Automatic detection** - no manual switching  
+✅ **Easy maintenance** - version-specific code isolated in one file  
+✅ **Future-proof** - can add v3.x support without forking  
+✅ **No separate branches needed**  
+
+## Technical Details
+
+### Why not use `gpiod::line` directly in v2.x?
+
+In libgpiod v2.x, `gpiod::line` is a **namespace**, not a class. The actual line request object is `gpiod::line_request`, which manages one or more GPIO lines together. This is a fundamental design difference - v2.x uses request batching for efficiency.
+
+Our solution stores:
+- The chip reference (shared among multiple lines)
+- The offset (which line within the chip)
+- The line_request object (manages the requested lines)
+
+This allows the compatibility layer to provide per-line semantics matching v1.x's API while working with v2.x's request-based architecture.
 
 ---
-**Note:** This solution eliminates the need for separate branches, making development and deployment simpler across different Raspberry Pi models.
+**Status**: Ready for testing on both platforms. Version detection is automatic via CMake header inspection.
